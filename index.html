@@ -18,7 +18,7 @@
   --glow-h:0 0 28px rgba(0,212,255,0.18);
   --r:12px; --r-lg:16px;
 }
-html,body{height:100%;background:var(--bg);font-family:'Rajdhani',sans-serif;color:var(--text);font-size:15px;}
+html,body{height:100%;background:var(--bg);font-family:'Rajdhani',sans-serif;color:var(--text);font-size:15px;transition:background 0.6s ease;}
 button{font-family:'Rajdhani',sans-serif;cursor:pointer;}
 input,textarea{font-family:'Rajdhani',sans-serif;}
 ::-webkit-scrollbar{width:4px;}
@@ -390,6 +390,7 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
             <div class="log-list" id="recentLogs">
               <div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요 💪</div>
             </div>
+            <div id="dailySummary"></div>
           </div>
         </div>
       </div>
@@ -585,21 +586,23 @@ const WORKOUT_TYPES = [
 // ── 상점 아이템
 const SHOP_ITEMS = [
   // 캐릭터 (운동할수록 점점 근육이 커지는 컨셉)
-  {id:'char1', cat:'캐릭터', icon:'🙂', name:'운동 새싹', desc:'운동을 막 시작한 초보자', cost:200, type:'avatar'},
-  {id:'char2', cat:'캐릭터', icon:'🚶', name:'꾸준 워커', desc:'매일 걷기 시작한 캐릭터', cost:400, type:'avatar'},
-  {id:'char3', cat:'캐릭터', icon:'💪', name:'근육맨', desc:'근육이 붙기 시작한 캐릭터', cost:600, type:'avatar'},
-  {id:'char4', cat:'캐릭터', icon:'🏋️', name:'헬스 마니아', desc:'본격적으로 근육을 키우는 캐릭터', cost:900, type:'avatar'},
-  {id:'char5', cat:'캐릭터', icon:'🏆', name:'보디빌더 챔피언', desc:'최고의 근육질 챔피언 캐릭터', cost:1500, type:'avatar'},
-  // 배경
-  {id:'bg1', cat:'배경', icon:'🌊', name:'오션 배경', desc:'시원한 바다 배경으로 변경', cost:500, type:'bg', color:'linear-gradient(135deg,#0a1628,#0d2a3a)'},
-  {id:'bg2', cat:'배경', icon:'🌌', name:'우주 배경', desc:'신비로운 우주 배경으로 변경', cost:800, type:'bg', color:'linear-gradient(135deg,#0a0a1a,#1a0a2e)'},
-  {id:'bg3', cat:'배경', icon:'🌲', name:'숲 배경', desc:'싱그러운 숲 배경으로 변경', cost:600, type:'bg', color:'linear-gradient(135deg,#0a1a0a,#0d2a15)'},
-  {id:'bg4', cat:'배경', icon:'🌅', name:'일몰 배경', desc:'아름다운 일몰 배경으로 변경', cost:700, type:'bg', color:'linear-gradient(135deg,#1a0a0a,#2a1505)'},
-  // 뱃지
-  {id:'badge1', cat:'뱃지', icon:'⚡', name:'번개 뱃지', desc:'빠른 운동의 증표', cost:200, type:'badge'},
-  {id:'badge2', cat:'뱃지', icon:'💎', name:'다이아 뱃지', desc:'최고의 운동 선수 증표', cost:1000, type:'badge'},
-  {id:'badge3', cat:'뱃지', icon:'🏆', name:'챔피언 뱃지', desc:'운동 챔피언의 증표', cost:1500, type:'badge'},
-  {id:'badge4', cat:'뱃지', icon:'🔥', name:'불꽃 뱃지', desc:'열정적인 운동의 증표', cost:300, type:'badge'},
+  {id:'char1', cat:'캐릭터', icon:'🙂', name:'운동 새싹', desc:'운동을 막 시작한 초보자', cost:500, type:'avatar'},
+  {id:'char2', cat:'캐릭터', icon:'🚶', name:'꾸준 워커', desc:'매일 걷기 시작한 캐릭터', cost:1200, type:'avatar'},
+  {id:'char3', cat:'캐릭터', icon:'💪', name:'근육맨', desc:'근육이 붙기 시작한 캐릭터', cost:2500, type:'avatar'},
+  {id:'char4', cat:'캐릭터', icon:'🏋️', name:'헬스 마니아', desc:'본격적으로 근육을 키우는 캐릭터', cost:4500, type:'avatar'},
+  {id:'char5', cat:'캐릭터', icon:'🏆', name:'보디빌더 챔피언', desc:'최고의 근육질 챔피언 캐릭터', cost:8000, type:'avatar'},
+  // 배경 (헬창 컨셉)
+  {id:'bg1', cat:'배경', icon:'🥤', name:'프로틴 쉐이크', desc:'온통 프로틴 쉐이크 색으로 물든 배경', cost:1200, type:'bg', color:'linear-gradient(135deg,#1a1410,#2a1f15)'},
+  {id:'bg2', cat:'배경', icon:'🏋️', name:'헬스장 락커룸', desc:'철문과 락커가 떠오르는 차가운 배경', cost:2000, type:'bg', color:'linear-gradient(135deg,#0d1117,#1c2128)'},
+  {id:'bg3', cat:'배경', icon:'🍗', name:'닭가슴살 식단방', desc:'오늘도 닭가슴살... 담백한 베이지 배경', cost:1500, type:'bg', color:'linear-gradient(135deg,#1a1612,#2a2418)'},
+  {id:'bg4', cat:'배경', icon:'🔥', name:'가슴데이 파이어', desc:'가슴 운동 후 펌핑된 듯한 레드존 배경', cost:1800, type:'bg', color:'linear-gradient(135deg,#1a0a0a,#2a1010)'},
+  // 뱃지 (헬창 컨셉)
+  {id:'badge1', cat:'뱃지', icon:'🍗', name:'닭가슴살 마스터', desc:'오늘도 닭가슴살... 식단 관리의 증표', cost:600, type:'badge'},
+  {id:'badge2', cat:'뱃지', icon:'🥤', name:'프로틴 쉐이커', desc:'어디서든 쉐이커를 흔드는 헬창의 증표', cost:1200, type:'badge'},
+  {id:'badge3', cat:'뱃지', icon:'🦅', name:'등데이 날개', desc:'등 운동 후 날개가 생긴 자의 증표 (라발류 자세 필수)', cost:2500, type:'badge'},
+  {id:'badge4', cat:'뱃지', icon:'🍑', name:'스쿼트의 신', desc:'레그데이를 지배하는 자의 증표', cost:3000, type:'badge'},
+  {id:'badge5', cat:'뱃지', icon:'💎', name:'PR 갱신왕', desc:'개인 최고 기록을 갈아치우는 자의 증표', cost:3500, type:'badge'},
+  {id:'badge6', cat:'뱃지', icon:'😤', name:'미친존재감 헬창', desc:'헬스장 그 자체가 된 전설의 증표', cost:5000, type:'badge'},
   // API 키 관련
   {id:'api_unlock', cat:'특별', icon:'🤖', name:'AI 분석 해금권', desc:'클릭하면 Claude API 키 발급 페이지로 이동해요! 키를 발급받아 입력하면 +500pt 보너스 지급', cost:0, type:'api', free:true},
 ];
@@ -637,7 +640,7 @@ function load() {
     setApiStatus(true);
     document.getElementById('apiSetup').classList.remove('show');
   }
-  if (state.equippedBg) document.body.style.background = state.equippedBg;
+  if (state.equippedBg) { document.body.style.background = state.equippedBg; document.documentElement.style.background = state.equippedBg; }
 }
 
 // ── 네비게이션
@@ -816,10 +819,10 @@ function renderBalanceChips(balance) {
 // ── 포인트 계산
 function calcPoints(workouts) {
   const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
-  let pts = 100;
-  if (totalMins>=30) pts+=50;
-  if (totalMins>=60) pts+=50;
-  pts += state.streak*20;
+  let pts = 15;
+  if (totalMins>=30) pts+=8;
+  if (totalMins>=60) pts+=8;
+  pts += Math.min(state.streak,10)*3;
   return pts;
 }
 
@@ -836,14 +839,14 @@ function updateStreak() {
   state.streak=s;
 }
 
-// ── 뱃지 체크
+// ── 뱃지 체크 (헬창 컨셉)
 const BADGES_DEF = [
-  {id:'b_first',icon:'🎉',name:'첫 운동!', check:s=>s.logs.length>=1},
-  {id:'b_7day',icon:'🔥',name:'7일 연속', check:s=>s.streak>=7},
-  {id:'b_20',icon:'🏅',name:'20회 달성', check:s=>s.logs.length>=20},
-  {id:'b_3000',icon:'👑',name:'운동왕 3000pt', check:s=>s.points>=3000},
-  {id:'b_30min',icon:'⏰',name:'30분 달성', check:s=>s.logs.some(l=>l.totalMins>=30)},
-  {id:'b_100',icon:'💯',name:'100회 달성', check:s=>s.logs.length>=100},
+  {id:'b_first',icon:'🍗',name:'닭가슴살 첫 끼', check:s=>s.logs.length>=1},
+  {id:'b_30min',icon:'🥤',name:'프로틴 타임', check:s=>s.logs.some(l=>l.totalMins>=30)},
+  {id:'b_7day',icon:'🔥',name:'헬스장 출근 7일차', check:s=>s.streak>=7},
+  {id:'b_20',icon:'🏋️',name:'벌크업 20세트', check:s=>s.logs.length>=20},
+  {id:'b_800',icon:'👑',name:'헬창의 제왕', check:s=>s.points>=800},
+  {id:'b_100',icon:'💯',name:'전설의 헬창', check:s=>s.logs.length>=100},
 ];
 function checkBadges() {
   BADGES_DEF.forEach(b => {
@@ -891,7 +894,12 @@ function renderRecentLogs() {
   const today = new Date().toISOString().slice(0,10);
   const todayLogs = state.logs.filter(l=>l.date===today);
   const wrap = document.getElementById('recentLogs');
-  if (!todayLogs.length) { wrap.innerHTML='<div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요 💪</div>'; return; }
+  const summaryWrap = document.getElementById('dailySummary');
+  if (!todayLogs.length) {
+    wrap.innerHTML='<div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요 💪</div>';
+    if (summaryWrap) summaryWrap.innerHTML='';
+    return;
+  }
   wrap.innerHTML = todayLogs.map(l=>{
     const aic=l.aiLabel==='적절'?'var(--green)':l.aiLabel==='과함'?'var(--coral)':'var(--gold)';
     return `<div class="log-item">
@@ -904,6 +912,20 @@ function renderRecentLogs() {
       <button class="rm-btn" onclick="deleteLog(${l.id})" title="삭제">−</button>
     </div>`;
   }).join('');
+
+  // 오늘 전체 종합 한 줄 분석
+  if (summaryWrap) {
+    const totalMins = todayLogs.reduce((s,l)=>s+l.totalMins,0);
+    const totalKcal = todayLogs.reduce((s,l)=>s+l.totalKcal,0);
+    const overallLabel = totalMins>=90?'과함':totalMins>=20?'적절':'부족';
+    const lc = overallLabel==='적절'?'var(--green)':overallLabel==='과함'?'var(--coral)':'var(--gold)';
+    const msg = overallLabel==='과함'
+      ? `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 운동량이 많아요. 휴식도 챙기세요!`
+      : overallLabel==='적절'
+      ? `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 적절한 하루였어요! 👍`
+      : `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 조금 부족해요. 조금만 더 움직여볼까요?`;
+    summaryWrap.innerHTML = `<div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:${lc}12;border:1px solid ${lc}33;font-size:12px;color:${lc};font-weight:600;">📋 오늘 종합: ${msg}</div>`;
+  }
 }
 
 function deleteLog(id) {
@@ -1159,6 +1181,7 @@ function equipItem(id) {
   } else if (item.type==='bg') {
     state.equippedBg=item.color;
     document.body.style.background=item.color;
+    document.documentElement.style.background=item.color;
   } else if (item.type==='badge') {
     state.equippedBadge=item.icon+' '+item.name;
     document.getElementById('equippedBadge').textContent=`장착중: ${state.equippedBadge}`;
