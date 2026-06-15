@@ -540,9 +540,16 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
       </div>
 
       <!-- 획득한 뱃지 -->
-      <div class="card">
+      <div class="card" style="margin-bottom:16px">
         <div class="card-title">획득한 뱃지</div>
         <div class="badge-grid" id="badgeGrid"></div>
+      </div>
+
+      <!-- 데이터 초기화 -->
+      <div class="card">
+        <div class="card-title" style="color:var(--coral)">데이터 초기화</div>
+        <div style="font-size:12px;color:var(--sub);margin-bottom:12px;">모든 운동 기록, 포인트, 캐릭터, 뱃지가 삭제됩니다. 이 작업은 되돌릴 수 없어요.</div>
+        <button onclick="resetAllData()" style="background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--coral);border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;transition:all 0.2s;">🗑️ 전체 초기화</button>
       </div>
     </div>
   </main>
@@ -577,12 +584,12 @@ const WORKOUT_TYPES = [
 
 // ── 상점 아이템
 const SHOP_ITEMS = [
-  // 캐릭터
-  {id:'char1', cat:'캐릭터', icon:'🦸', name:'슈퍼히어로', desc:'강력한 운동 영웅 캐릭터', cost:300, type:'avatar'},
-  {id:'char2', cat:'캐릭터', icon:'🧙', name:'마법사', desc:'신비로운 마법사 캐릭터', cost:500, type:'avatar'},
-  {id:'char3', cat:'캐릭터', icon:'🤖', name:'사이보그', desc:'최첨단 사이보그 캐릭터', cost:800, type:'avatar'},
-  {id:'char4', cat:'캐릭터', icon:'🦊', name:'여우 캐릭터', desc:'귀여운 여우 캐릭터', cost:400, type:'avatar'},
-  {id:'char5', cat:'캐릭터', icon:'🐉', name:'드래곤', desc:'전설의 드래곤 캐릭터', cost:1500, type:'avatar'},
+  // 캐릭터 (운동할수록 점점 근육이 커지는 컨셉)
+  {id:'char1', cat:'캐릭터', icon:'🙂', name:'운동 새싹', desc:'운동을 막 시작한 초보자', cost:200, type:'avatar'},
+  {id:'char2', cat:'캐릭터', icon:'🚶', name:'꾸준 워커', desc:'매일 걷기 시작한 캐릭터', cost:400, type:'avatar'},
+  {id:'char3', cat:'캐릭터', icon:'💪', name:'근육맨', desc:'근육이 붙기 시작한 캐릭터', cost:600, type:'avatar'},
+  {id:'char4', cat:'캐릭터', icon:'🏋️', name:'헬스 마니아', desc:'본격적으로 근육을 키우는 캐릭터', cost:900, type:'avatar'},
+  {id:'char5', cat:'캐릭터', icon:'🏆', name:'보디빌더 챔피언', desc:'최고의 근육질 챔피언 캐릭터', cost:1500, type:'avatar'},
   // 배경
   {id:'bg1', cat:'배경', icon:'🌊', name:'오션 배경', desc:'시원한 바다 배경으로 변경', cost:500, type:'bg', color:'linear-gradient(135deg,#0a1628,#0d2a3a)'},
   {id:'bg2', cat:'배경', icon:'🌌', name:'우주 배경', desc:'신비로운 우주 배경으로 변경', cost:800, type:'bg', color:'linear-gradient(135deg,#0a0a1a,#1a0a2e)'},
@@ -594,8 +601,15 @@ const SHOP_ITEMS = [
   {id:'badge3', cat:'뱃지', icon:'🏆', name:'챔피언 뱃지', desc:'운동 챔피언의 증표', cost:1500, type:'badge'},
   {id:'badge4', cat:'뱃지', icon:'🔥', name:'불꽃 뱃지', desc:'열정적인 운동의 증표', cost:300, type:'badge'},
   // API 키 관련
-  {id:'api_unlock', cat:'특별', icon:'🤖', name:'AI 분석 해금권', desc:'Claude API 키를 입력하고 AI 분석 기능을 활성화하세요! 포인트 500pt 보너스 지급', cost:0, type:'api', free:true},
+  {id:'api_unlock', cat:'특별', icon:'🤖', name:'AI 분석 해금권', desc:'클릭하면 Claude API 키 발급 페이지로 이동해요! 키를 발급받아 입력하면 +500pt 보너스 지급', cost:0, type:'api', free:true},
 ];
+
+// ── 운동량에 따라 캐릭터 자동 업그레이드 기준 (참고용 누적 운동시간)
+const AVATAR_BY_MINUTES = [
+  {min:0, icon:'🙂'}, {min:60, icon:'🚶'}, {min:180, icon:'💪'}, {min:360, icon:'🏋️'}, {min:600, icon:'🏆'}
+];
+
+
 
 // ── 상태
 let state = {
@@ -662,20 +676,23 @@ function setApiStatus(on) {
 // ── 운동 선택 버튼 렌더링
 function renderWorkoutTypeGrid() {
   const grid = document.getElementById('workoutTypeGrid');
-  grid.innerHTML = WORKOUT_TYPES.map(w => `
-    <button class="wtype-btn" onclick="toggleWorkout('${w.name}','${w.icon}',${w.kcalPerMin})" id="wbtn-${w.name}">
-      ${w.icon} ${w.name}
-    </button>`).join('');
+  if (!grid) return;
+  let html = '';
+  WORKOUT_TYPES.forEach(w => {
+    html += `<button class="wtype-btn" onclick="toggleWorkout('${w.name}','${w.icon}',${w.kcalPerMin})" id="wbtn-${w.name.replace(/\s/g,'_')}">${w.icon} ${w.name}</button>`;
+  });
+  grid.innerHTML = html;
 }
 
 function toggleWorkout(name, icon, kcalPerMin) {
   const existing = selectedWorkouts.findIndex(w => w.name===name);
+  const btnId = 'wbtn-' + name.replace(/\s/g,'_');
   if (existing >= 0) {
     selectedWorkouts.splice(existing, 1);
-    document.getElementById('wbtn-'+name)?.classList.remove('selected');
+    document.getElementById(btnId)?.classList.remove('selected');
   } else {
     selectedWorkouts.push({name, icon, kcalPerMin, minutes: 30});
-    document.getElementById('wbtn-'+name)?.classList.add('selected');
+    document.getElementById(btnId)?.classList.add('selected');
   }
   renderSelectedWorkouts();
 }
@@ -705,7 +722,7 @@ function renderSelectedWorkouts() {
 function removeWorkout(i) {
   const name = selectedWorkouts[i].name;
   selectedWorkouts.splice(i, 1);
-  document.getElementById('wbtn-'+name)?.classList.remove('selected');
+  document.getElementById('wbtn-'+name.replace(/\s/g,'_'))?.classList.remove('selected');
   renderSelectedWorkouts();
 }
 
@@ -729,8 +746,13 @@ async function analyzeWorkout() {
   let aiText = '', aiLabel = '적절';
 
   if (!state.apiKey) {
-    aiLabel = totalMins>=60?'과함':totalMins>=20?'적절':'부족';
-    aiText = `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동량이 ${totalMins>=30?'적절해 보여요':'조금 부족해 보여요'}. API 키를 설정하면 맞춤 AI 분석을 받을 수 있어요 💪`;
+    aiLabel = totalMins>=90?'과함':totalMins>=20?'적절':'부족';
+    const demoMsg = aiLabel==='과함'
+      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동 시간이 다소 많아요. 무리한 운동은 부상의 위험이 있으니 내일은 가볍게 스트레칭 위주로 쉬어가는 것을 추천해요 🙆`
+      : aiLabel==='적절'
+      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동량이 적절해 보여요. 꾸준히 이 페이스를 유지해보세요 💪`
+      : `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동량이 조금 부족해 보여요. 시간을 조금 더 늘려보는 건 어떨까요? 🙂`;
+    aiText = demoMsg + ' API 키를 설정하면 맞춤 AI 분석을 받을 수 있어요!';
   } else {
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -879,8 +901,22 @@ function renderRecentLogs() {
         <div class="log-meta">${l.totalMins}분 · ${l.totalKcal}kcal · +${l.points}pt</div>
       </div>
       <div class="ai-chip" style="color:${aic};background:${aic}18;border:1px solid ${aic}33">AI: ${l.aiLabel||'-'}</div>
+      <button class="rm-btn" onclick="deleteLog(${l.id})" title="삭제">−</button>
     </div>`;
   }).join('');
+}
+
+function deleteLog(id) {
+  const idx = state.logs.findIndex(l=>l.id===id);
+  if (idx === -1) return;
+  const removed = state.logs[idx];
+  state.logs.splice(idx, 1);
+  state.points = Math.max(0, state.points - (removed.points||0));
+  updateStreak();
+  save();
+  updateKPIs();
+  renderRecentLogs();
+  showToast('🗑️ 기록을 삭제했어요');
 }
 
 // ── 캘린더
@@ -1071,9 +1107,11 @@ function renderShop() {
         <div class="shop-icon">${item.icon}</div>
         <div class="shop-name">${item.name}</div>
         <div class="shop-desc">${item.desc}</div>
-        <div class="shop-cost ${item.free?'free'}">${item.free?'무료':item.cost+'pt'}</div>
+        <div class="shop-cost ${item.free?'free':''}">${item.free?'무료':item.cost+'pt'}</div>
         ${owned
           ? `<button class="shop-btn owned-btn" onclick="equipItem('${item.id}')">✅ 장착하기</button>`
+          : item.type==='api'
+          ? `<button class="shop-btn" onclick="buyItem('${item.id}')">${state.apiKey?'✅ 연결됨 (다시 보기)':'🔗 API 키 발급받기'}</button>`
           : `<button class="shop-btn" onclick="buyItem('${item.id}')" ${canBuy?'':'disabled'}>${canBuy?'구매':'포인트 부족'}</button>`
         }
       </div>`;
@@ -1087,10 +1125,21 @@ function buyItem(id) {
   const item=SHOP_ITEMS.find(i=>i.id===id);
   if (!item) return;
   if (item.type==='api') {
-    // API 키 해금권 - API 설정 열기
+    const url = 'https://console.anthropic.com/settings/keys';
+    // 새 탭에서 API 키 발급 페이지 열기
+    window.open(url, '_blank');
+    // 주소를 클립보드에 복사 (지원 브라우저)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).catch(()=>{});
+    }
+    // API 입력창 펼치고 홈으로 이동
     document.getElementById('apiSetup').classList.add('show');
     navigate('home');
-    showToast('API 키를 입력하면 +500pt 보너스!');
+    if (state.apiKey) {
+      showToast('✅ 이미 API 키가 연결되어 있어요! 새 탭에서 다른 키도 확인해보세요');
+    } else {
+      showToast('🔗 새 탭에서 API 키를 발급받고, 복사한 키를 아래 입력창에 붙여넣어요! (주소도 복사됨)');
+    }
     return;
   }
   if (!item.free && state.points<item.cost) return showToast('포인트가 부족해요!','warn');
@@ -1142,6 +1191,12 @@ function showToast(msg,type) {
   t.style.borderColor=type==='warn'?'rgba(255,215,0,0.3)':'rgba(0,212,255,0.2)';
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+function resetAllData() {
+  if (!confirm('정말 모든 데이터를 초기화할까요?\n운동 기록, 포인트, 캐릭터, 뱃지가 모두 사라집니다.')) return;
+  localStorage.removeItem('fitai_v2');
+  location.reload();
 }
 
 // ── 초기화
