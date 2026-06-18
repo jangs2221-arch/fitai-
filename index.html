@@ -861,7 +861,7 @@ function renderBalanceChips(balance) {
 // ── 포인트 계산
 function calcPoints(workouts) {
   const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
-  let pts = 75;
+  let pts = 100;
   if (totalMins>=30) pts+=8;
   if (totalMins>=60) pts+=8;
   pts += Math.min(state.streak,10)*3;
