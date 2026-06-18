@@ -288,7 +288,7 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
   <nav id="sidebar">
     <div class="logo">
       <div class="logo-text">FIT<span>AI</span></div>
-      <div class="logo-sub">v0.3 · SELF-ANALYSIS</div>
+      <div class="logo-sub">v0.3 · GEMINI API</div>
     </div>
     <button class="nav-item active" onclick="navigate('home')" id="nav-home"><span class="nav-icon">🏠</span><span>홈 대시보드</span></button>
     <button class="nav-item" onclick="navigate('calendar')" id="nav-calendar"><span class="nav-icon">📅</span><span>운동 캘린더</span></button>
@@ -298,7 +298,7 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
     <div class="sidebar-footer">
       <div class="api-status">
         <span class="api-dot" id="apiDot"></span>
-        <span id="apiStatusText" style="font-size:10px;color:var(--sub)">자체 분석 모드</span>
+        <span id="apiStatusText" style="font-size:10px;color:var(--sub)">API 미연결</span>
       </div>
     </div>
   </nav>
@@ -310,12 +310,16 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
         <div class="page-title">대시보드</div>
         <div class="page-sub" id="today-date"></div>
       </div>
-      <div class="api-setup" id="apiSetup" style="display:none;">
+      <div class="api-setup show" id="apiSetup">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-          <span>🤖</span>
-          <span style="font-size:13px;font-weight:600;color:var(--gold);">AI 분석 안내</span>
+          <span>⚙️</span>
+          <span style="font-size:13px;font-weight:600;color:var(--gold);">Gemini API 키 설정</span>
         </div>
-        <div style="font-size:12px;color:var(--sub);">FitAI는 자체 분석 로직으로 운동 칼로리·시간·강도를 기반으로 피드백을 제공합니다.</div>
+        <div style="font-size:12px;color:var(--sub);">AI 분석 기능을 사용하려면 Gemini API 키를 입력하세요. 브라우저에만 저장됩니다.</div>
+        <div class="api-input-row">
+          <input type="password" class="api-input" id="apiKeyInput" placeholder="AIzaSy...">
+          <button class="api-save-btn" onclick="saveApiKey()">저장</button>
+        </div>
       </div>
       <!-- 오늘 KPI -->
       <div class="kpi-grid fade-up" style="animation-delay:0.05s">
@@ -630,6 +634,7 @@ const AVATAR_BY_MINUTES = [
 
 // ── 상태
 let state = {
+  apiKey: '',
   logs: [],
   points: 0,
   streak: 0,
@@ -649,7 +654,13 @@ function save() { localStorage.setItem('fitai_v2', JSON.stringify(state)); }
 function load() {
   const raw = localStorage.getItem('fitai_v2');
   if (raw) state = {...state, ...JSON.parse(raw)};
-  setApiStatus(true);
+  if (state.apiKey) {
+    document.getElementById('apiKeyInput').value = '••••••••••••';
+    setApiStatus(true);
+    document.getElementById('apiSetup').classList.remove('show');
+  } else {
+    setApiStatus(false);
+  }
   if (state.equippedBg) { document.body.style.background = state.equippedBg; document.documentElement.style.background = state.equippedBg; }
   if (state.equippedBgFloats && state.equippedBgFloats.length) renderBgFloaters(state.equippedBgFloats);
 }
@@ -684,10 +695,24 @@ function navigate(page) {
   if (page==='goal') renderGoal();
 }
 
-// ── AI 분석 모드 (FitAI 자체 분석 로직, 데모 모드로 운영)
+// ── Gemini API 키
+function saveApiKey() {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if (!val || val.includes('•')) return showToast('API 키를 입력해주세요','warn');
+  state.apiKey = val;
+  if (!state.ownedItems.includes('api_bonus')) {
+    state.points += 500;
+    state.ownedItems.push('api_bonus');
+    showToast('🎉 API 키 연결 보너스 +500pt!');
+  }
+  save();
+  setApiStatus(true);
+  document.getElementById('apiSetup').classList.remove('show');
+  showToast('Gemini API 키가 저장되었어요 ✅');
+}
 function setApiStatus(on) {
   document.getElementById('apiDot').className = 'api-dot'+(on?' on':'');
-  document.getElementById('apiStatusText').textContent = '자체 분석 모드';
+  document.getElementById('apiStatusText').textContent = on?'Gemini 연결됨':'API 미연결';
 }
 
 // ── 운동 선택 버튼 렌더링
@@ -770,29 +795,58 @@ async function analyzeWorkout() {
   const overloadWarning = totalKcal >= 1500 || totalMins >= 150;
 
   let aiLabel = judge(totalMins, totalKcal);
-  let aiText = aiLabel==='과함'
-    ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! 칼로리 소모량과 운동 시간이 매우 높아요. 무리한 운동은 부상이나 탈진의 위험이 있으니 내일은 가볍게 스트레칭 위주로 충분히 쉬어가는 것을 추천해요 🙆`
-    : aiLabel==='적절'
-    ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! 운동량이 적절해 보여요. 꾸준히 이 페이스를 유지해보세요 💪`
-    : `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! 운동량이 조금 부족해 보여요. 시간을 조금 더 늘려보는 건 어떨까요? 🙂`;
+  let aiText = '';
 
-  // 신체 부위 밸런스 간단 추정 (운동 종류 기반)
-  const UPPER = ['팔굽혀펴기','근력운동','농구'];
-  const LOWER = ['스쿼트','달리기','걷기','축구'];
-  const CARDIO = ['달리기','걷기','사이클','수영','줄넘기','축구','농구'];
-  let upper=0, lower=0, cardio=0;
-  workouts.forEach(w=>{
-    if (UPPER.includes(w.name)) upper+=w.minutes;
-    if (LOWER.includes(w.name)) lower+=w.minutes;
-    if (CARDIO.includes(w.name)) cardio+=w.minutes;
-    if (!UPPER.includes(w.name)&&!LOWER.includes(w.name)&&!CARDIO.includes(w.name)) { upper+=w.minutes*0.3; lower+=w.minutes*0.3; cardio+=w.minutes*0.4; }
-  });
-  const balTotal = upper+lower+cardio || 1;
-  renderBalanceChips([
-    {label:'상체', val: Math.round(upper/balTotal*100)},
-    {label:'하체', val: Math.round(lower/balTotal*100)},
-    {label:'유산소', val: Math.round(cardio/balTotal*100)},
-  ]);
+  if (!state.apiKey) {
+    // 데모 모드: FitAI 자체 분석 로직
+    aiText = aiLabel==='과함'
+      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! (데모 모드) 칼로리 소모량과 운동 시간이 매우 높아요. 무리한 운동은 부상이나 탈진의 위험이 있으니 내일은 가볍게 스트레칭 위주로 충분히 쉬어가는 것을 추천해요 🙆`
+      : aiLabel==='적절'
+      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! (데모 모드) 운동량이 적절해 보여요. 꾸준히 이 페이스를 유지해보세요 💪`
+      : `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! (데모 모드) 운동량이 조금 부족해 보여요. 시간을 조금 더 늘려보는 건 어떨까요? 🙂`;
+    aiText += ' Gemini API 키를 설정하면 맞춤 AI 분석을 받을 수 있어요!';
+
+    // 신체 부위 밸런스 간단 추정 (운동 종류 기반)
+    const UPPER = ['팔굽혀펴기','근력운동','농구'];
+    const LOWER = ['스쿼트','달리기','걷기','축구'];
+    const CARDIO = ['달리기','걷기','사이클','수영','줄넘기','축구','농구'];
+    let upper=0, lower=0, cardio=0;
+    workouts.forEach(w=>{
+      if (UPPER.includes(w.name)) upper+=w.minutes;
+      if (LOWER.includes(w.name)) lower+=w.minutes;
+      if (CARDIO.includes(w.name)) cardio+=w.minutes;
+      if (!UPPER.includes(w.name)&&!LOWER.includes(w.name)&&!CARDIO.includes(w.name)) { upper+=w.minutes*0.3; lower+=w.minutes*0.3; cardio+=w.minutes*0.4; }
+    });
+    const balTotal = upper+lower+cardio || 1;
+    renderBalanceChips([
+      {label:'상체', val: Math.round(upper/balTotal*100)},
+      {label:'하체', val: Math.round(lower/balTotal*100)},
+      {label:'유산소', val: Math.round(cardio/balTotal*100)},
+    ]);
+  } else {
+    // Gemini API 호출
+    try {
+      const prompt = `운동 전문가 AI로서 오늘 운동을 분석해주세요.\n오늘 운동: ${summary}\n총 운동 시간: ${totalMins}분\n총 소모 칼로리: 약 ${totalKcal}kcal\n평균 운동 강도: 분당 약 ${avgIntensity.toFixed(1)}kcal\n\n중요: 판정은 운동 시간만 보지 말고, 소모 칼로리와 운동 강도를 반드시 함께 고려하세요. 예를 들어 짧은 시간이라도 칼로리 소모가 매우 크면(고강도) '과함'으로 판단해야 하고, 긴 시간이라도 강도가 매우 낮은 가벼운 스트레칭이면 '부족'으로 판단할 수 있습니다.\n\n형식:\n1. 첫 줄: "적절", "부족", "과함" 중 하나\n2. 3-4문장 피드백 (소모 칼로리와 강도를 근거로 설명)\n3. 마지막 줄: "상체:XX% 하체:XX% 유산소:XX%"\n\n참고 기준: 총 칼로리 1500kcal 이상이거나 총 시간 150분 이상이면 과함, 총 칼로리 100kcal 미만이거나 총 시간 20분 미만이면 부족, 그 외에는 적절.`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${state.apiKey}`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const raw = data.candidates[0].content.parts[0].text;
+      const lines = raw.split('\n').filter(l=>l.trim());
+      aiLabel = lines[0].includes('적절')?'적절':lines[0].includes('과함')?'과함':'부족';
+      aiText = lines.slice(1).join(' ').replace(/상체:\d+%.*$/,'').trim();
+      const bm = raw.match(/상체:(\d+)%\s*하체:(\d+)%\s*유산소:(\d+)%/);
+      if (bm) renderBalanceChips([{label:'상체',val:bm[1]},{label:'하체',val:bm[2]},{label:'유산소',val:bm[3]}]);
+    } catch(e) {
+      aiText = 'AI 분석 오류: '+e.message; aiLabel='오류';
+    }
+  }
 
   // 과도한 운동량 감지 시 별도 경고 문구 추가
   if (overloadWarning) {
@@ -1266,1272 +1320,30 @@ function init() {
 init();
 </script>
 </body>
-</html><!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FitAI — AI 운동 기록 & 분석</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-:root{
-  --bg:#0a0e1a; --card:#0d1428; --card2:#111d35;
-  --cyan:#00d4ff; --gold:#ffd700; --coral:#ff6b6b; --purple:#7c3aed;
-  --green:#4ade80;
-  --text:#ffffff; --sub:#8fa3c0;
-  --border:rgba(0,212,255,0.15);
-  --glow:0 0 20px rgba(0,212,255,0.07);
-  --glow-h:0 0 28px rgba(0,212,255,0.18);
-  --r:12px; --r-lg:16px;
-}
-html,body{height:100%;background:var(--bg);font-family:'Rajdhani',sans-serif;color:var(--text);font-size:15px;transition:background 0.6s ease;}
-button{font-family:'Rajdhani',sans-serif;cursor:pointer;}
-input,textarea{font-family:'Rajdhani',sans-serif;}
-::-webkit-scrollbar{width:4px;}
-::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.25);border-radius:2px;}
-@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
-#bgFloaters{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
-.float-icon{position:absolute;bottom:-15vh;opacity:0.16;filter:blur(0.3px);animation:floatUp linear infinite;will-change:transform;}
-@keyframes floatUp{
-  0%{transform:translateY(0) translateX(0) rotate(0deg);}
-  50%{transform:translateY(-55vh) translateX(30px) rotate(180deg);}
-  100%{transform:translateY(-115vh) translateX(-10px) rotate(360deg);}
-}
-@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
-@keyframes spin{to{transform:rotate(360deg);}}
-@keyframes barGrow{from{width:0;}to{}}
-.fade-up{animation:fadeUp 0.45s ease both;}
-#app{display:flex;min-height:100vh;}
-#sidebar{
-  width:220px;flex-shrink:0;background:var(--card);
-  border-right:1px solid var(--border);
-  display:flex;flex-direction:column;padding:24px 0;
-  position:sticky;top:0;height:100vh;overflow:hidden;
-}
-.logo{padding:0 20px 24px;border-bottom:1px solid var(--border);margin-bottom:16px;}
-.logo-text{font-family:'Orbitron';font-size:20px;font-weight:900;letter-spacing:2px;color:var(--cyan);}
-.logo-text span{color:var(--text);}
-.logo-sub{font-size:11px;color:var(--sub);letter-spacing:1px;margin-top:3px;font-family:'JetBrains Mono';}
-.nav-item{
-  display:flex;align-items:center;gap:10px;
-  padding:11px 20px;font-size:14px;font-weight:600;
-  color:var(--sub);border:none;background:transparent;
-  width:100%;text-align:left;letter-spacing:0.5px;
-  border-left:2px solid transparent;transition:all 0.2s;
-}
-.nav-item:hover{color:var(--cyan);background:rgba(0,212,255,0.05);}
-.nav-item.active{color:var(--cyan);background:rgba(0,212,255,0.08);border-left-color:var(--cyan);}
-.nav-icon{font-size:16px;width:20px;text-align:center;}
-.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border);}
-.api-status{display:flex;align-items:center;gap:7px;font-size:11px;font-family:'JetBrains Mono';}
-.api-dot{width:7px;height:7px;border-radius:50%;background:var(--coral);}
-.api-dot.on{background:var(--green);animation:pulse 2s infinite;}
-#main{flex:1;overflow-y:auto;padding:28px 32px;}
-.page-header{margin-bottom:28px;}
-.page-title{font-family:'Orbitron';font-size:18px;font-weight:700;letter-spacing:2px;color:var(--text);}
-.page-sub{font-size:13px;color:var(--sub);margin-top:4px;letter-spacing:0.5px;}
-.card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--r-lg);padding:20px 22px;
-  box-shadow:var(--glow);transition:border-color 0.25s,box-shadow 0.25s;
-}
-.card:hover{border-color:rgba(0,212,255,0.3);box-shadow:var(--glow-h);}
-.card-title{
-  font-family:'Orbitron';font-size:10px;font-weight:600;
-  color:var(--cyan);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;
-}
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
-.kpi-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--r);padding:16px 18px;box-shadow:var(--glow);transition:all 0.25s;
-}
-.kpi-card:hover{border-color:rgba(0,212,255,0.3);box-shadow:var(--glow-h);}
-.kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.kpi-icon{font-size:18px;}
-.kpi-badge{font-size:10px;font-family:'Rajdhani';font-weight:700;padding:2px 8px;border-radius:20px;}
-.up{color:var(--green);background:rgba(74,222,128,0.12);}
-.dn{color:var(--coral);background:rgba(255,107,107,0.12);}
-.kpi-val{font-family:'Orbitron';font-size:20px;font-weight:700;color:var(--text);letter-spacing:1px;}
-.kpi-unit{font-size:11px;color:var(--sub);font-family:'Rajdhani';margin-left:3px;}
-.kpi-label{font-size:12px;color:var(--sub);margin-top:4px;letter-spacing:0.5px;}
-.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
-.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;}
-.grid-12{display:grid;grid-template-columns:1.2fr 0.8fr;gap:16px;margin-bottom:20px;}
-
-/* 운동 선택 버튼들 */
-.workout-type-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
-.wtype-btn{
-  background:rgba(255,255,255,0.04);border:1px solid var(--border);
-  color:var(--sub);border-radius:8px;padding:8px 14px;
-  font-size:13px;font-weight:600;transition:all 0.2s;
-  display:flex;align-items:center;gap:6px;
-}
-.wtype-btn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,212,255,0.08);}
-.wtype-btn.selected{border-color:var(--cyan);color:var(--cyan);background:rgba(0,212,255,0.15);}
-
-/* 선택된 운동 목록 */
-.selected-workouts{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
-.selected-item{
-  display:flex;align-items:center;gap:10px;
-  background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);
-  border-radius:8px;padding:10px 14px;
-}
-.selected-item span{flex:1;font-size:13px;font-weight:600;color:var(--cyan);}
-.selected-item input{
-  width:90px;background:rgba(255,255,255,0.04);
-  border:1px solid var(--border);border-radius:6px;
-  padding:6px 10px;color:var(--text);font-size:12px;
-  font-family:'Rajdhani';outline:none;
-}
-.selected-item input:focus{border-color:var(--cyan);}
-.rm-btn{
-  width:28px;height:28px;border-radius:50%;background:rgba(255,107,107,0.1);
-  border:1px solid rgba(255,107,107,0.3);color:var(--coral);
-  font-size:14px;display:flex;align-items:center;justify-content:center;
-  transition:all 0.2s;flex-shrink:0;
-}
-.rm-btn:hover{background:rgba(255,107,107,0.2);}
-
-/* 기타 입력 */
-.custom-input-row{display:flex;gap:8px;margin-bottom:14px;}
-.custom-input-row input{
-  flex:1;background:rgba(255,255,255,0.04);
-  border:1px solid var(--border);border-radius:8px;
-  padding:10px 14px;color:var(--text);font-size:13px;
-  font-family:'Rajdhani';outline:none;transition:border-color 0.2s;
-}
-.custom-input-row input:focus{border-color:var(--cyan);}
-.custom-input-row input::placeholder{color:var(--sub);}
-.add-custom-btn{
-  background:rgba(0,212,255,0.1);border:1px solid var(--cyan);
-  color:var(--cyan);border-radius:8px;padding:10px 16px;
-  font-size:13px;font-weight:600;transition:all 0.2s;white-space:nowrap;
-}
-.add-custom-btn:hover{background:rgba(0,212,255,0.2);}
-
-.analyze-btn{
-  background:linear-gradient(135deg,rgba(0,212,255,0.2),rgba(0,212,255,0.08));
-  border:1px solid var(--cyan);color:var(--cyan);
-  border-radius:10px;padding:13px 28px;font-size:14px;font-weight:700;
-  letter-spacing:1px;font-family:'Orbitron';
-  transition:all 0.25s;display:flex;align-items:center;gap:10px;
-  width:100%;justify-content:center;margin-top:14px;
-}
-.analyze-btn:hover{background:rgba(0,212,255,0.2);box-shadow:0 0 24px rgba(0,212,255,0.2);}
-.analyze-btn:disabled{opacity:0.4;cursor:not-allowed;}
-.spinner{width:20px;height:20px;border:2px solid rgba(0,212,255,0.2);border-top-color:var(--cyan);border-radius:50%;animation:spin 0.8s linear infinite;display:none;}
-.ai-result{border-radius:12px;padding:18px;margin-top:16px;border:1px solid rgba(0,212,255,0.2);background:linear-gradient(135deg,rgba(0,212,255,0.05),rgba(0,212,255,0.02));display:none;}
-.ai-result.visible{display:block;}
-.ai-result-header{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
-.ai-label{font-family:'Orbitron';font-size:11px;font-weight:700;padding:3px 12px;border-radius:20px;}
-.label-good{background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.3);}
-.label-warn{background:rgba(255,215,0,0.15);color:var(--gold);border:1px solid rgba(255,215,0,0.3);}
-.label-over{background:rgba(255,107,107,0.15);color:var(--coral);border:1px solid rgba(255,107,107,0.3);}
-.ai-text-content{font-size:13px;color:var(--sub);line-height:1.7;}
-.ai-text-content strong{color:var(--text);font-weight:600;}
-.balance-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
-.balance-chip{font-size:11px;padding:4px 12px;border-radius:20px;font-weight:600;font-family:'Rajdhani';}
-
-/* 캘린더 */
-.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
-.cal-nav-btn{background:transparent;border:1px solid var(--border);color:var(--sub);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;transition:all 0.2s;}
-.cal-nav-btn:hover{border-color:var(--cyan);color:var(--cyan);}
-.cal-month{font-family:'Orbitron';font-size:14px;font-weight:700;color:var(--text);}
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
-.cal-dow{text-align:center;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';padding:8px 0;letter-spacing:1px;}
-.cal-day{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:500;border:1px solid transparent;transition:all 0.2s;cursor:pointer;position:relative;}
-.cal-day:hover{border-color:var(--border);background:rgba(255,255,255,0.03);}
-.cal-day.empty{pointer-events:none;}
-.cal-day.today{border-color:rgba(0,212,255,0.4);background:rgba(0,212,255,0.08);color:var(--cyan);}
-.cal-day.worked{background:rgba(0,212,255,0.15);border-color:rgba(0,212,255,0.3);}
-.cal-day.worked .cal-dot{display:block;}
-.cal-dot{display:none;width:4px;height:4px;border-radius:50%;background:var(--cyan);margin-top:2px;}
-.cal-day-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:24px;width:380px;z-index:100;box-shadow:0 20px 60px rgba(0,0,0,0.5);display:none;}
-.cal-day-modal.open{display:block;}
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99;display:none;}
-.modal-overlay.open{display:block;}
-.modal-close{position:absolute;top:14px;right:14px;background:transparent;border:none;color:var(--sub);font-size:18px;cursor:pointer;}
-.modal-close:hover{color:var(--text);}
-
-/* 통계 */
-.stat-bar-wrap{display:flex;flex-direction:column;gap:10px;}
-.stat-bar-row{display:flex;align-items:center;gap:10px;}
-.stat-bar-label{font-size:12px;color:var(--sub);width:60px;flex-shrink:0;}
-.stat-bar-bg{flex:1;height:18px;background:rgba(255,255,255,0.04);border-radius:4px;overflow:hidden;}
-.stat-bar-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:8px;font-size:10px;font-weight:600;animation:barGrow 0.8s ease both;}
-.stat-bar-val{font-size:11px;font-family:'JetBrains Mono';color:var(--sub);width:36px;text-align:right;}
-.prog-row{margin-bottom:14px;}
-.prog-info{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;}
-.prog-name{color:var(--text);font-weight:500;}
-.prog-val{color:var(--sub);font-family:'JetBrains Mono';font-size:11px;}
-.prog-bg{width:100%;height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;}
-.prog-fill{height:100%;border-radius:4px;transition:width 1s ease;}
-
-/* 스트릭 */
-.streak-row{display:flex;gap:6px;margin-bottom:16px;}
-.s-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;font-family:'Rajdhani';}
-.s-done{background:rgba(0,212,255,0.2);border:1px solid rgba(0,212,255,0.5);color:var(--cyan);}
-.s-skip{background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--coral);}
-.s-today{background:var(--cyan);border:1px solid var(--cyan);color:var(--bg);}
-.s-empty{background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--sub);}
-
-/* 마이페이지 */
-.profile-wrap{display:flex;flex-direction:column;align-items:center;padding:20px 0;}
-.profile-avatar{width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;border:2px solid var(--cyan);background:rgba(0,212,255,0.1);margin-bottom:12px;transition:all 0.3s;}
-.profile-name{font-family:'Orbitron';font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;}
-.point-display{font-family:'Orbitron';font-size:32px;font-weight:900;color:var(--gold);text-align:center;padding:16px;text-shadow:0 0 30px rgba(255,215,0,0.3);}
-
-/* 상점 */
-.shop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-.shop-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;transition:all 0.25s;position:relative;}
-.shop-card:hover{border-color:rgba(0,212,255,0.3);}
-.shop-card.locked{opacity:0.6;}
-.shop-card.owned{border-color:rgba(74,222,128,0.4);background:rgba(74,222,128,0.05);}
-.shop-icon{font-size:32px;margin-bottom:8px;}
-.shop-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px;}
-.shop-desc{font-size:11px;color:var(--sub);margin-bottom:10px;line-height:1.4;}
-.shop-cost{font-size:12px;color:var(--gold);font-family:'JetBrains Mono';margin-bottom:8px;}
-.shop-cost.free{color:var(--cyan);}
-.shop-btn{width:100%;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);color:var(--gold);border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;transition:all 0.2s;}
-.shop-btn:hover{background:rgba(255,215,0,0.2);}
-.shop-btn:disabled{opacity:0.4;cursor:not-allowed;}
-.shop-btn.owned-btn{background:rgba(74,222,128,0.1);border-color:rgba(74,222,128,0.3);color:var(--green);}
-.shop-category{font-family:'Orbitron';font-size:10px;font-weight:600;color:var(--sub);letter-spacing:2px;margin:20px 0 12px;text-transform:uppercase;}
-
-/* 뱃지 */
-.badge-grid{display:flex;flex-wrap:wrap;gap:10px;}
-.badge-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;min-width:70px;}
-.badge-icon{font-size:22px;}
-.badge-name{font-size:10px;color:var(--sub);text-align:center;}
-.badge-item.earned{border-color:rgba(255,215,0,0.4);background:rgba(255,215,0,0.05);}
-.badge-item.earned .badge-name{color:var(--gold);}
-
-/* API 설정 */
-.api-setup{background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.2);border-radius:12px;padding:16px;margin-bottom:20px;display:none;}
-.api-setup.show{display:block;}
-.api-input-row{display:flex;gap:8px;margin-top:10px;}
-.api-input{flex:1;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text);font-size:12px;font-family:'JetBrains Mono';outline:none;transition:border-color 0.2s;}
-.api-input:focus{border-color:var(--cyan);}
-.api-save-btn{background:rgba(0,212,255,0.15);border:1px solid var(--cyan);color:var(--cyan);border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;letter-spacing:0.5px;transition:all 0.2s;}
-.api-save-btn:hover{background:rgba(0,212,255,0.25);}
-
-/* 로그 */
-.log-list{display:flex;flex-direction:column;gap:10px;}
-.log-item{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:12px 16px;transition:border-color 0.2s;}
-.log-item:hover{border-color:rgba(0,212,255,0.3);}
-.log-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
-.log-info{flex:1;}
-.log-name{font-size:13px;font-weight:600;color:var(--text);}
-.log-meta{font-size:11px;color:var(--sub);margin-top:2px;}
-.ai-chip{font-size:10px;font-family:'Orbitron';font-weight:700;padding:3px 10px;border-radius:20px;}
-
-/* 하루 목표 */
-.today-goal-wrap{display:flex;flex-direction:column;gap:14px;}
-.goal-item{background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
-.goal-item-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
-.goal-item-name{font-size:13px;font-weight:600;color:var(--text);}
-.goal-item-val{font-size:12px;font-family:'JetBrains Mono';color:var(--sub);}
-.goal-bar-bg{width:100%;height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;}
-.goal-bar-fill{height:100%;border-radius:4px;transition:width 1s ease;}
-.goal-done{color:var(--green);font-size:12px;margin-top:6px;font-weight:600;}
-
-#toast{position:fixed;bottom:28px;right:28px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;transform:translateY(60px);opacity:0;transition:all 0.3s;z-index:200;}
-#toast.show{transform:translateY(0);opacity:1;}
-
-@media(max-width:900px){
-  #sidebar{width:60px;}
-  .nav-item span:last-child{display:none;}
-  .logo,.logo-sub,.sidebar-footer{display:none;}
-  .kpi-grid{grid-template-columns:repeat(2,1fr);}
-  .grid-2,.grid-3,.grid-12{grid-template-columns:1fr;}
-  .shop-grid{grid-template-columns:repeat(2,1fr);}
-}
-</style>
-</head>
-<body>
-<div id="bgFloaters"></div>
-<div id="app" style="position:relative;z-index:1;">
-  <nav id="sidebar">
-    <div class="logo">
-      <div class="logo-text">FIT<span>AI</span></div>
-      <div class="logo-sub">v0.3 · SELF-ANALYSIS</div>
-    </div>
-    <button class="nav-item active" onclick="navigate('home')" id="nav-home"><span class="nav-icon">🏠</span><span>홈 대시보드</span></button>
-    <button class="nav-item" onclick="navigate('calendar')" id="nav-calendar"><span class="nav-icon">📅</span><span>운동 캘린더</span></button>
-    <button class="nav-item" onclick="navigate('goal')" id="nav-goal"><span class="nav-icon">🎯</span><span>오늘 목표</span></button>
-    <button class="nav-item" onclick="navigate('stats')" id="nav-stats"><span class="nav-icon">📊</span><span>통계</span></button>
-    <button class="nav-item" onclick="navigate('mypage')" id="nav-mypage"><span class="nav-icon">👤</span><span>마이페이지</span></button>
-    <div class="sidebar-footer">
-      <div class="api-status">
-        <span class="api-dot" id="apiDot"></span>
-        <span id="apiStatusText" style="font-size:10px;color:var(--sub)">자체 분석 모드</span>
-      </div>
-    </div>
-  </nav>
-
-  <main id="main">
-    <!-- 홈 -->
-    <div id="page-home">
-      <div class="page-header fade-up">
-        <div class="page-title">대시보드</div>
-        <div class="page-sub" id="today-date"></div>
-      </div>
-      <div class="api-setup" id="apiSetup" style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-          <span>🤖</span>
-          <span style="font-size:13px;font-weight:600;color:var(--gold);">AI 분석 안내</span>
-        </div>
-        <div style="font-size:12px;color:var(--sub);">FitAI는 자체 분석 로직으로 운동 칼로리·시간·강도를 기반으로 피드백을 제공합니다.</div>
-      </div>
-      <!-- 오늘 KPI -->
-      <div class="kpi-grid fade-up" style="animation-delay:0.05s">
-        <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-icon">🔥</span><span class="kpi-badge up">오늘</span></div>
-          <div class="kpi-val"><span id="kpiKcal">0</span><span class="kpi-unit">kcal</span></div>
-          <div class="kpi-label">오늘 칼로리</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-icon">⏱</span><span class="kpi-badge up">오늘</span></div>
-          <div class="kpi-val"><span id="kpiTime">0</span><span class="kpi-unit">분</span></div>
-          <div class="kpi-label">오늘 운동 시간</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-icon">🗓</span><span class="kpi-badge up">🔥</span></div>
-          <div class="kpi-val"><span id="kpiStreak">0</span><span class="kpi-unit">일</span></div>
-          <div class="kpi-label">연속 운동 스트릭</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-top"><span class="kpi-icon">⭐</span><span class="kpi-badge up">POINT</span></div>
-          <div class="kpi-val"><span id="kpiPoints">0</span><span class="kpi-unit">pt</span></div>
-          <div class="kpi-label">누적 포인트</div>
-        </div>
-      </div>
-
-      <div class="grid-12 fade-up" style="animation-delay:0.1s">
-        <div class="card">
-          <div class="card-title">오늘 운동 입력</div>
-          <!-- 운동 종류 선택 버튼 -->
-          <div style="font-size:12px;color:var(--sub);margin-bottom:8px;">운동 종류 선택 (클릭)</div>
-          <div class="workout-type-grid" id="workoutTypeGrid"></div>
-          <!-- 기타 직접 입력 -->
-          <div style="font-size:12px;color:var(--sub);margin-bottom:8px;">기타 운동 직접 입력</div>
-          <div class="custom-input-row">
-            <input type="text" id="customWorkoutName" placeholder="운동 이름 입력">
-            <button class="add-custom-btn" onclick="addCustomWorkout()">+ 추가</button>
-          </div>
-          <!-- 선택된 운동 목록 -->
-          <div id="selectedWorkouts" class="selected-workouts"></div>
-          <button class="analyze-btn" onclick="analyzeWorkout()" id="analyzeBtn">
-            <div class="spinner" id="analyzeSpinner"></div>
-            <span id="analyzeBtnText">🤖 AI 분석 요청</span>
-          </button>
-          <div class="ai-result" id="aiResult">
-            <div class="ai-result-header">
-              <span style="font-size:14px;">🤖</span>
-              <span class="ai-label" id="aiLabel">분석중</span>
-              <span style="font-size:11px;color:var(--sub);margin-left:auto;font-family:'JetBrains Mono'" id="aiDate"></span>
-            </div>
-            <div class="ai-text-content" id="aiText"></div>
-            <div class="balance-chips" id="balanceChips"></div>
-          </div>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:16px;">
-          <div class="card">
-            <div class="card-title">이번 주 출석</div>
-            <div class="streak-row" id="streakDots"></div>
-            <div style="display:flex;justify-content:space-around;background:rgba(0,212,255,0.05);border:1px solid var(--border);border-radius:8px;padding:12px;">
-              <div style="text-align:center">
-                <div style="font-family:'Orbitron';font-size:16px;font-weight:700;color:var(--cyan)" id="statSessions">0</div>
-                <div style="font-size:11px;color:var(--sub);margin-top:2px">이번달 세션</div>
-              </div>
-              <div style="text-align:center">
-                <div style="font-family:'Orbitron';font-size:16px;font-weight:700;color:var(--gold)" id="statMinutes">0</div>
-                <div style="font-size:11px;color:var(--sub);margin-top:2px">오늘 총 분</div>
-              </div>
-              <div style="text-align:center">
-                <div style="font-family:'Orbitron';font-size:16px;font-weight:700;color:var(--coral)" id="statStreak2">0</div>
-                <div style="font-size:11px;color:var(--sub);margin-top:2px">연속일</div>
-              </div>
-            </div>
-          </div>
-          <div class="card" style="flex:1">
-            <div class="card-title">오늘 기록</div>
-            <div class="log-list" id="recentLogs">
-              <div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요 💪</div>
-            </div>
-            <div id="dailySummary"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 캘린더 -->
-    <div id="page-calendar" style="display:none">
-      <div class="page-header">
-        <div class="page-title">운동 캘린더</div>
-        <div class="page-sub">날짜를 클릭하면 그날 운동 기록을 볼 수 있어요</div>
-      </div>
-      <div class="card">
-        <div class="cal-nav">
-          <button class="cal-nav-btn" onclick="changeMonth(-1)">← 이전</button>
-          <div class="cal-month" id="calMonthLabel"></div>
-          <button class="cal-nav-btn" onclick="changeMonth(1)">다음 →</button>
-        </div>
-        <div class="cal-grid" id="calDows"></div>
-        <div class="cal-grid" id="calDays" style="margin-top:4px;gap:6px;"></div>
-      </div>
-      <div class="grid-3" style="margin-top:16px">
-        <div class="card" style="text-align:center">
-          <div class="card-title">이번달 운동 횟수</div>
-          <div style="font-family:'Orbitron';font-size:28px;font-weight:700;color:var(--cyan)" id="calStatSessions">0</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:4px">회</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div class="card-title">이번달 총 시간</div>
-          <div style="font-family:'Orbitron';font-size:28px;font-weight:700;color:var(--gold)" id="calStatMins">0</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:4px">분</div>
-        </div>
-        <div class="card" style="text-align:center">
-          <div class="card-title">연속 운동 일수</div>
-          <div style="font-family:'Orbitron';font-size:28px;font-weight:700;color:var(--coral)" id="calStatStreak">0</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:4px">일</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 오늘 목표 -->
-    <div id="page-goal" style="display:none">
-      <div class="page-header">
-        <div class="page-title">오늘 목표</div>
-        <div class="page-sub" id="goal-today-date"></div>
-      </div>
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">오늘 달성 현황</div>
-          <div class="today-goal-wrap" id="todayGoalWrap"></div>
-        </div>
-        <div class="card">
-          <div class="card-title">목표 설정</div>
-          <div style="display:flex;flex-direction:column;gap:12px;">
-            <div>
-              <div style="font-size:12px;color:var(--sub);margin-bottom:6px;">목표 운동 시간 (분)</div>
-              <input type="number" id="goalMinInput" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;" placeholder="예: 30">
-            </div>
-            <div>
-              <div style="font-size:12px;color:var(--sub);margin-bottom:6px;">목표 칼로리 (kcal)</div>
-              <input type="number" id="goalKcalInput" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;" placeholder="예: 300">
-            </div>
-            <div>
-              <div style="font-size:12px;color:var(--sub);margin-bottom:6px;">목표 운동 횟수</div>
-              <input type="number" id="goalSessionInput" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;outline:none;" placeholder="예: 1">
-            </div>
-            <button onclick="saveGoals()" style="background:rgba(0,212,255,0.15);border:1px solid var(--cyan);color:var(--cyan);border-radius:8px;padding:11px;font-size:13px;font-weight:700;transition:all 0.2s;">목표 저장</button>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">오늘 운동 내역</div>
-        <div class="log-list" id="todayLogs">
-          <div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">오늘 운동 기록이 없어요</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 통계 -->
-    <div id="page-stats" style="display:none">
-      <div class="page-header">
-        <div class="page-title">통계</div>
-        <div class="page-sub">운동 패턴을 분석해드려요</div>
-      </div>
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">운동 유형 분포</div>
-          <div class="stat-bar-wrap" id="typeDistBars">
-            <div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">데이터 없음</div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">이번달 달성률</div>
-          <div id="goalProgress"></div>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-title">요일별 운동 빈도</div>
-        <div id="dowChart" style="display:flex;align-items:flex-end;gap:8px;height:80px;margin-top:8px;"></div>
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">월</span>
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">화</span>
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">수</span>
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">목</span>
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">금</span>
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">토</span>
-          <span style="flex:1;font-size:10px;color:var(--sub);font-family:'JetBrains Mono';text-align:center">일</span>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">전체 운동 기록</div>
-        <div class="log-list" id="allLogs">
-          <div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 마이페이지 -->
-    <div id="page-mypage" style="display:none">
-      <div class="page-header">
-        <div class="page-title">마이페이지</div>
-        <div class="page-sub">포인트로 캐릭터, 뱃지, 배경을 꾸며보세요!</div>
-      </div>
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">내 프로필</div>
-          <div class="profile-wrap">
-            <div class="profile-avatar" id="profileAvatar">🏃</div>
-            <div class="profile-name">운동 챔피언</div>
-            <div id="equippedBadge" style="font-size:12px;color:var(--gold);margin-top:4px;"></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">보유 포인트</div>
-          <div class="point-display" id="myPoints">0</div>
-          <div style="font-size:12px;color:var(--sub);text-align:center;">🏅 포인트로 아이템을 구매하세요!</div>
-          <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--sub)">
-            <div style="display:flex;justify-content:space-between;"><span>운동 1회 저장</span><span style="color:var(--cyan);font-family:'JetBrains Mono'">+100pt</span></div>
-            <div style="display:flex;justify-content:space-between;"><span>30분 이상 운동</span><span style="color:var(--cyan);font-family:'JetBrains Mono'">+50pt</span></div>
-            <div style="display:flex;justify-content:space-between;"><span>연속 운동 보너스</span><span style="color:var(--gold);font-family:'JetBrains Mono'">+연속일×20pt</span></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 상점 세계관 설명 -->
-      <div class="card" style="margin-bottom:16px;border-color:rgba(255,215,0,0.25);">
-        <div class="card-title" style="color:var(--gold)">💡 포인트와 상점은 어떻게 운영될까요?</div>
-        <div style="font-size:12px;color:var(--sub);line-height:1.7;">
-          FitAI의 포인트는 실제 화폐가 아니라, <strong style="color:var(--text)">앱 자체에서 발행하는 가상의 보상 토큰</strong>이에요.
-          운동을 기록할 때마다 FitAI 시스템이 직접 포인트를 지급하기 때문에, 외부에서 돈이 들어오지 않아도 운영될 수 있어요.<br><br>
-          상점의 캐릭터·배경·뱃지는 <strong style="color:var(--text)">FitAI가 자체적으로 만든 디지털 아이템</strong>으로, 실제 기업의 제품이 아니에요.
-          그래서 진짜 돈이 오가지 않고, 광고나 협찬 없이도 동기부여 시스템을 운영할 수 있는 구조예요.<br><br>
-          만약 나중에 실제 브랜드(예: 운동화 회사, 헬스장)와 제휴한다면, 그때는 광고비나 제휴 수수료로 운영 비용을 마련하는 방식이 될 수 있어요. 지금 버전은 학습/연습용 앱이라 그 단계는 가상으로 표현했어요.
-        </div>
-      </div>
-
-      <!-- 상점 -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-title">포인트 상점</div>
-        <div id="shopContent"></div>
-      </div>
-
-      <!-- 획득한 뱃지 -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-title">획득한 뱃지</div>
-        <div class="badge-grid" id="badgeGrid"></div>
-      </div>
-
-      <!-- 데이터 초기화 -->
-      <div class="card">
-        <div class="card-title" style="color:var(--coral)">데이터 초기화</div>
-        <div style="font-size:12px;color:var(--sub);margin-bottom:12px;">모든 운동 기록, 포인트, 캐릭터, 뱃지가 삭제됩니다. 이 작업은 되돌릴 수 없어요.</div>
-        <button onclick="resetAllData()" style="background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--coral);border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;transition:all 0.2s;">🗑️ 전체 초기화</button>
-      </div>
-    </div>
-  </main>
+</html><!-- 화면 맨 아래에 보일 API 키 입력창 디자인 -->
+<div id="api-key-box" style="position: fixed; bottom: 10px; right: 10px; background: #222; color: #fff; padding: 10px; border-radius: 8px; font-family: sans-serif; font-size: 12px; z-index: 9999; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    <label style="display:block; margin-bottom:5px;">Gemini API Key 입력:</label>
+    <input type="password" id="gemini-key-input" placeholder="AIzaSy..." style="background:#333; color:#fff; border:1px solid #555; padding:4px; border-radius:4px; width:150px; margin-right:5px;">
+    <button onclick="saveApiKey()" style="background:#007acc; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">저장</button>
 </div>
-
-<!-- 캘린더 모달 -->
-<div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
-<div class="cal-day-modal" id="calModal">
-  <button class="modal-close" onclick="closeModal()">✕</button>
-  <div style="font-family:'Orbitron';font-size:13px;font-weight:700;color:var(--cyan);margin-bottom:12px" id="modalDate"></div>
-  <div id="modalContent"></div>
-</div>
-
-<div id="toast"></div>
 
 <script>
-// ── 운동 종류 목록
-const WORKOUT_TYPES = [
-  {name:'달리기', icon:'🏃', kcalPerMin:8},
-  {name:'걷기', icon:'🚶', kcalPerMin:4},
-  {name:'사이클', icon:'🚴', kcalPerMin:7},
-  {name:'수영', icon:'🏊', kcalPerMin:9},
-  {name:'근력운동', icon:'💪', kcalPerMin:5},
-  {name:'팔굽혀펴기', icon:'🤸', kcalPerMin:6},
-  {name:'스쿼트', icon:'🦵', kcalPerMin:6},
-  {name:'줄넘기', icon:'🪢', kcalPerMin:10},
-  {name:'요가', icon:'🧘', kcalPerMin:3},
-  {name:'스트레칭', icon:'🙆', kcalPerMin:2},
-  {name:'축구', icon:'⚽', kcalPerMin:8},
-  {name:'농구', icon:'🏀', kcalPerMin:8},
-];
-
-// ── 상점 아이템
-const SHOP_ITEMS = [
-  // 캐릭터 (운동할수록 점점 근육이 커지는 컨셉)
-  {id:'char1', cat:'캐릭터', icon:'🙂', name:'운동 새싹', desc:'운동을 막 시작한 초보자', cost:500, type:'avatar'},
-  {id:'char2', cat:'캐릭터', icon:'🚶', name:'꾸준 워커', desc:'매일 걷기 시작한 캐릭터', cost:1200, type:'avatar'},
-  {id:'char3', cat:'캐릭터', icon:'💪', name:'근육맨', desc:'근육이 붙기 시작한 캐릭터', cost:2500, type:'avatar'},
-  {id:'char4', cat:'캐릭터', icon:'🏋️', name:'헬스 마니아', desc:'본격적으로 근육을 키우는 캐릭터', cost:4500, type:'avatar'},
-  {id:'char5', cat:'캐릭터', icon:'🏆', name:'보디빌더 챔피언', desc:'최고의 근육질 챔피언 캐릭터', cost:8000, type:'avatar'},
-  // 배경 (헬창 컨셉) - floats: 떠다니는 아이콘들
-  {id:'bg1', cat:'배경', icon:'🥤', name:'프로틴 쉐이크', desc:'프로틴 쉐이크와 아령이 떠다니는 배경', cost:1200, type:'bg', color:'linear-gradient(135deg,#1a1410,#2a1f15)', floats:['🥤','🥛','💪','🍌']},
-  {id:'bg2', cat:'배경', icon:'🏋️', name:'헬스장 락커룸', desc:'헬스 기구와 아령이 떠다니는 배경', cost:2000, type:'bg', color:'linear-gradient(135deg,#0d1117,#1c2128)', floats:['🏋️','🔒','🏋️‍♂️','⚙️']},
-  {id:'bg3', cat:'배경', icon:'🍗', name:'닭가슴살 식단방', desc:'닭가슴살과 식단 아이템이 떠다니는 배경', cost:1500, type:'bg', color:'linear-gradient(135deg,#1a1612,#2a2418)', floats:['🍗','🥚','🥦','🍚']},
-  {id:'bg4', cat:'배경', icon:'🔥', name:'가슴데이 파이어', desc:'불꽃과 근육이 떠다니는 배경', cost:1800, type:'bg', color:'linear-gradient(135deg,#1a0a0a,#2a1010)', floats:['🔥','💪','🏋️','💥']},
-  // 뱃지 (헬창 컨셉)
-  {id:'badge1', cat:'뱃지', icon:'🍗', name:'닭가슴살 마스터', desc:'오늘도 닭가슴살... 식단 관리의 증표', cost:600, type:'badge'},
-  {id:'badge2', cat:'뱃지', icon:'🥤', name:'프로틴 쉐이커', desc:'어디서든 쉐이커를 흔드는 헬창의 증표', cost:1200, type:'badge'},
-  {id:'badge3', cat:'뱃지', icon:'🦅', name:'등데이 날개', desc:'등 운동 후 날개가 생긴 자의 증표 (라발류 자세 필수)', cost:2500, type:'badge'},
-  {id:'badge4', cat:'뱃지', icon:'🍑', name:'스쿼트의 신', desc:'레그데이를 지배하는 자의 증표', cost:3000, type:'badge'},
-  {id:'badge5', cat:'뱃지', icon:'💎', name:'PR 갱신왕', desc:'개인 최고 기록을 갈아치우는 자의 증표', cost:3500, type:'badge'},
-  {id:'badge6', cat:'뱃지', icon:'😤', name:'미친존재감 헬창', desc:'헬스장 그 자체가 된 전설의 증표', cost:5000, type:'badge'},
-];
-
-// ── 운동량에 따라 캐릭터 자동 업그레이드 기준 (참고용 누적 운동시간)
-const AVATAR_BY_MINUTES = [
-  {min:0, icon:'🙂'}, {min:60, icon:'🚶'}, {min:180, icon:'💪'}, {min:360, icon:'🏋️'}, {min:600, icon:'🏆'}
-];
-
-
-
-// ── 상태
-let state = {
-  logs: [],
-  points: 0,
-  streak: 0,
-  ownedItems: [],
-  equippedAvatar: '🏃',
-  equippedBg: '',
-  equippedBgFloats: [],
-  equippedBadge: '',
-  goals: {mins: 30, kcal: 300, sessions: 1},
-};
-
-// ── 선택된 운동 (임시)
-let selectedWorkouts = [];
-
-// ── 저장/불러오기
-function save() { localStorage.setItem('fitai_v2', JSON.stringify(state)); }
-function load() {
-  const raw = localStorage.getItem('fitai_v2');
-  if (raw) state = {...state, ...JSON.parse(raw)};
-  setApiStatus(true);
-  if (state.equippedBg) { document.body.style.background = state.equippedBg; document.documentElement.style.background = state.equippedBg; }
-  if (state.equippedBgFloats && state.equippedBgFloats.length) renderBgFloaters(state.equippedBgFloats);
-}
-
-// ── 떠다니는 배경 아이콘 렌더링
-function renderBgFloaters(icons) {
-  const wrap = document.getElementById('bgFloaters');
-  if (!wrap) return;
-  if (!icons || !icons.length) { wrap.innerHTML = ''; return; }
-  let html = '';
-  const COUNT = 18;
-  for (let i = 0; i < COUNT; i++) {
-    const icon = icons[i % icons.length];
-    const left = Math.round(Math.random()*96);
-    const size = 22 + Math.round(Math.random()*34); // 22~56px
-    const duration = 14 + Math.round(Math.random()*16); // 14~30s
-    const delay = -Math.round(Math.random()*30); // -0~30s (already in progress)
-    html += `<span class="float-icon" style="left:${left}%;font-size:${size}px;animation-duration:${duration}s;animation-delay:${delay}s;">${icon}</span>`;
-  }
-  wrap.innerHTML = html;
-}
-
-// ── 네비게이션
-function navigate(page) {
-  ['home','calendar','goal','stats','mypage'].forEach(p => {
-    document.getElementById('page-'+p).style.display = p===page?'block':'none';
-    document.getElementById('nav-'+p).classList.toggle('active', p===page);
-  });
-  if (page==='calendar') renderCalendar();
-  if (page==='stats') renderStats();
-  if (page==='mypage') renderMypage();
-  if (page==='goal') renderGoal();
-}
-
-// ── AI 분석 모드 (FitAI 자체 분석 로직, 데모 모드로 운영)
-function setApiStatus(on) {
-  document.getElementById('apiDot').className = 'api-dot'+(on?' on':'');
-  document.getElementById('apiStatusText').textContent = '자체 분석 모드';
-}
-
-// ── 운동 선택 버튼 렌더링
-function renderWorkoutTypeGrid() {
-  const grid = document.getElementById('workoutTypeGrid');
-  if (!grid) return;
-  let html = '';
-  WORKOUT_TYPES.forEach(w => {
-    html += `<button class="wtype-btn" onclick="toggleWorkout('${w.name}','${w.icon}',${w.kcalPerMin})" id="wbtn-${w.name.replace(/\s/g,'_')}">${w.icon} ${w.name}</button>`;
-  });
-  grid.innerHTML = html;
-}
-
-function toggleWorkout(name, icon, kcalPerMin) {
-  const existing = selectedWorkouts.findIndex(w => w.name===name);
-  const btnId = 'wbtn-' + name.replace(/\s/g,'_');
-  if (existing >= 0) {
-    selectedWorkouts.splice(existing, 1);
-    document.getElementById(btnId)?.classList.remove('selected');
-  } else {
-    selectedWorkouts.push({name, icon, kcalPerMin, minutes: 30});
-    document.getElementById(btnId)?.classList.add('selected');
-  }
-  renderSelectedWorkouts();
-}
-
-function addCustomWorkout() {
-  const name = document.getElementById('customWorkoutName').value.trim();
-  if (!name) return showToast('운동 이름을 입력해주세요','warn');
-  selectedWorkouts.push({name, icon:'⚡', kcalPerMin:5, minutes:30});
-  document.getElementById('customWorkoutName').value = '';
-  renderSelectedWorkouts();
-}
-
-function renderSelectedWorkouts() {
-  const wrap = document.getElementById('selectedWorkouts');
-  if (!selectedWorkouts.length) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = selectedWorkouts.map((w,i) => `
-    <div class="selected-item">
-      <span>${w.icon} ${w.name}</span>
-      <input type="number" value="${w.minutes}" min="1" placeholder="분"
-        onchange="selectedWorkouts[${i}].minutes=parseInt(this.value)||0"
-        style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px;font-family:'Rajdhani';outline:none;width:80px;">
-      <span style="font-size:11px;color:var(--sub)">분</span>
-      <button class="rm-btn" onclick="removeWorkout(${i})">−</button>
-    </div>`).join('');
-}
-
-function removeWorkout(i) {
-  const name = selectedWorkouts[i].name;
-  selectedWorkouts.splice(i, 1);
-  document.getElementById('wbtn-'+name.replace(/\s/g,'_'))?.classList.remove('selected');
-  renderSelectedWorkouts();
-}
-
-// ── AI 분석
-async function analyzeWorkout() {
-  if (!selectedWorkouts.length) return showToast('운동을 선택해주세요!','warn');
-  const workouts = selectedWorkouts.filter(w => w.minutes > 0);
-  if (!workouts.length) return showToast('운동 시간을 입력해주세요!','warn');
-
-  const btn = document.getElementById('analyzeBtn');
-  const spinner = document.getElementById('analyzeSpinner');
-  const btnText = document.getElementById('analyzeBtnText');
-  btn.disabled = true;
-  spinner.style.display = 'block';
-  btnText.textContent = 'AI 분석 중...';
-
-  const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
-  const totalKcal = workouts.reduce((s,w)=>s+Math.round(w.kcalPerMin*w.minutes),0);
-  const avgIntensity = totalMins > 0 ? totalKcal/totalMins : 0; // kcal per minute (운동 강도)
-  const summary = workouts.map(w=>`${w.icon}${w.name} ${w.minutes}분`).join(', ');
-
-  // 칼로리/시간/강도를 함께 고려한 판정 (시간만 보고 판단하지 않도록)
-  function judge(mins, kcal) {
-    if (kcal >= 1500 || mins >= 150) return '과함';
-    if (kcal < 100 || mins < 20) return '부족';
-    return '적절';
-  }
-  const overloadWarning = totalKcal >= 1500 || totalMins >= 150;
-
-  let aiLabel = judge(totalMins, totalKcal);
-  let aiText = aiLabel==='과함'
-    ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! 칼로리 소모량과 운동 시간이 매우 높아요. 무리한 운동은 부상이나 탈진의 위험이 있으니 내일은 가볍게 스트레칭 위주로 충분히 쉬어가는 것을 추천해요 🙆`
-    : aiLabel==='적절'
-    ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! 운동량이 적절해 보여요. 꾸준히 이 페이스를 유지해보세요 💪`
-    : `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! 운동량이 조금 부족해 보여요. 시간을 조금 더 늘려보는 건 어떨까요? 🙂`;
-
-  // 신체 부위 밸런스 간단 추정 (운동 종류 기반)
-  const UPPER = ['팔굽혀펴기','근력운동','농구'];
-  const LOWER = ['스쿼트','달리기','걷기','축구'];
-  const CARDIO = ['달리기','걷기','사이클','수영','줄넘기','축구','농구'];
-  let upper=0, lower=0, cardio=0;
-  workouts.forEach(w=>{
-    if (UPPER.includes(w.name)) upper+=w.minutes;
-    if (LOWER.includes(w.name)) lower+=w.minutes;
-    if (CARDIO.includes(w.name)) cardio+=w.minutes;
-    if (!UPPER.includes(w.name)&&!LOWER.includes(w.name)&&!CARDIO.includes(w.name)) { upper+=w.minutes*0.3; lower+=w.minutes*0.3; cardio+=w.minutes*0.4; }
-  });
-  const balTotal = upper+lower+cardio || 1;
-  renderBalanceChips([
-    {label:'상체', val: Math.round(upper/balTotal*100)},
-    {label:'하체', val: Math.round(lower/balTotal*100)},
-    {label:'유산소', val: Math.round(cardio/balTotal*100)},
-  ]);
-
-  // 과도한 운동량 감지 시 별도 경고 문구 추가
-  if (overloadWarning) {
-    aiText += `<br><br><span style="color:var(--coral);font-weight:700;">⚠️ 경고: 오늘 소모 칼로리(${totalKcal}kcal) 또는 운동 시간(${totalMins}분)이 매우 높습니다. 과도한 운동은 부상, 탈진, 면역력 저하의 위험이 있어요. 충분한 휴식과 수분 섭취를 챙기고, 통증이 있다면 즉시 운동을 멈추세요.</span>`;
-  }
-
-  const lc = {적절:'label-good',부족:'label-warn',과함:'label-over',오류:'label-warn'}[aiLabel]||'label-warn';
-  document.getElementById('aiLabel').textContent = aiLabel;
-  document.getElementById('aiLabel').className = 'ai-label '+lc;
-  document.getElementById('aiText').innerHTML = aiText;
-  document.getElementById('aiDate').textContent = new Date().toLocaleDateString('ko-KR');
-  document.getElementById('aiResult').classList.add('visible');
-
-  const pts = calcPoints(workouts);
-  const entry = {
-    id:Date.now(), date:new Date().toISOString().slice(0,10),
-    workouts: workouts.map(w=>({...w, kcal:Math.round(w.kcalPerMin*w.minutes)})),
-    totalMins, totalKcal, aiText, aiLabel, points:pts, timestamp:Date.now()
-  };
-  state.logs.unshift(entry);
-  state.points += pts;
-  updateStreak();
-  checkBadges();
-  save();
-  updateKPIs();
-  renderRecentLogs();
-
-  // 선택 초기화
-  selectedWorkouts = [];
-  document.querySelectorAll('.wtype-btn').forEach(b=>b.classList.remove('selected'));
-  renderSelectedWorkouts();
-
-  showToast(`💾 저장됨! +${pts}pt 획득`);
-  btn.disabled=false; spinner.style.display='none'; btnText.textContent='🤖 AI 분석 요청';
-}
-
-function renderBalanceChips(balance) {
-  const c = {상체:'rgba(0,212,255,0.15)',하체:'rgba(255,215,0,0.15)',유산소:'rgba(255,107,107,0.15)'};
-  const t = {상체:'var(--cyan)',하체:'var(--gold)',유산소:'var(--coral)'};
-  document.getElementById('balanceChips').innerHTML = balance.map(b=>`
-    <span class="balance-chip" style="background:${c[b.label]};color:${t[b.label]};border:1px solid ${t[b.label]}33">${b.label} ${b.val}%</span>`).join('');
-}
-
-// ── 포인트 계산
-function calcPoints(workouts) {
-  const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
-  const totalKcal = workouts.reduce((s,w)=>s+Math.round(w.kcalPerMin*w.minutes),0);
-  let pts = 100;
-  if (totalMins>=30) pts+=8;
-  if (totalMins>=60) pts+=8;
-  pts += Math.min(state.streak,10)*3;
-  pts += Math.round(totalKcal/2); // 칼로리 2당 1포인트 추가
-  return pts;
-}
-
-// ── 스트릭
-function updateStreak() {
-  const today = new Date().toISOString().slice(0,10);
-  const dates = [...new Set(state.logs.map(l=>l.date))].sort().reverse();
-  if (!dates.includes(today)) { state.streak=0; return; }
-  let s=1;
-  for (let i=1;i<dates.length;i++) {
-    const diff = (new Date(dates[i-1])-new Date(dates[i]))/(1000*60*60*24);
-    if (diff===1) s++; else break;
-  }
-  state.streak=s;
-}
-
-// ── 뱃지 체크 (헬창 컨셉)
-const BADGES_DEF = [
-  {id:'b_first',icon:'🍗',name:'닭가슴살 첫 끼', check:s=>s.logs.length>=1},
-  {id:'b_30min',icon:'🥤',name:'프로틴 타임', check:s=>s.logs.some(l=>l.totalMins>=30)},
-  {id:'b_7day',icon:'🔥',name:'헬스장 출근 7일차', check:s=>s.streak>=7},
-  {id:'b_20',icon:'🏋️',name:'벌크업 20세트', check:s=>s.logs.length>=20},
-  {id:'b_800',icon:'👑',name:'헬창의 제왕', check:s=>s.points>=800},
-  {id:'b_100',icon:'💯',name:'전설의 헬창', check:s=>s.logs.length>=100},
-];
-function checkBadges() {
-  BADGES_DEF.forEach(b => {
-    if (!state.ownedItems.includes(b.id) && b.check(state)) {
-      state.ownedItems.push(b.id);
-      showToast(`🎉 뱃지 획득: "${b.icon} ${b.name}"`);
+// 사용자가 입력한 API 키를 컴퓨터에 기억시키는 기능
+function saveApiKey() {
+    const keyInput = document.getElementById('gemini-key-input').value.trim();
+    if (keyInput) {
+        localStorage.setItem('gemini_api_key', keyInput);
+        alert("API 키가 안전하게 저장되었습니다! 이제 AI 피드백을 받을 수 있습니다.");
+    } else {
+        alert("키를 입력해주세요.");
     }
-  });
 }
 
-// ── KPI 업데이트
-function updateKPIs() {
-  const today = new Date().toISOString().slice(0,10);
-  const todayLogs = state.logs.filter(l=>l.date===today);
-  const todayMins = todayLogs.reduce((s,l)=>s+l.totalMins,0);
-  const todayKcal = todayLogs.reduce((s,l)=>s+l.totalKcal,0);
-  document.getElementById('kpiKcal').textContent = todayKcal.toLocaleString();
-  document.getElementById('kpiTime').textContent = todayMins;
-  document.getElementById('kpiStreak').textContent = state.streak;
-  document.getElementById('kpiPoints').textContent = state.points.toLocaleString();
-  renderStreakDots();
-  const monthLogs = getMonthLogs();
-  document.getElementById('statSessions').textContent = monthLogs.length;
-  document.getElementById('statMinutes').textContent = todayMins;
-  document.getElementById('statStreak2').textContent = state.streak;
-}
-
-function renderStreakDots() {
-  const days=['월','화','수','목','금','토','일'];
-  const today=new Date(), todayDow=(today.getDay()+6)%7;
-  let html='';
-  days.forEach((d,i)=>{
-    const diff=i-todayDow, date=new Date(today);
-    date.setDate(today.getDate()+diff);
-    const ds=date.toISOString().slice(0,10);
-    const hasLog=state.logs.some(l=>l.date===ds);
-    const isToday=i===todayDow;
-    const cls=isToday?'s-today':hasLog?'s-done':diff<0?'s-skip':'s-empty';
-    html+=`<div class="s-dot ${cls}">${d}</div>`;
-  });
-  document.getElementById('streakDots').innerHTML=html;
-}
-
-function renderRecentLogs() {
-  const today = new Date().toISOString().slice(0,10);
-  const todayLogs = state.logs.filter(l=>l.date===today);
-  const wrap = document.getElementById('recentLogs');
-  const summaryWrap = document.getElementById('dailySummary');
-  if (!todayLogs.length) {
-    wrap.innerHTML='<div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요 💪</div>';
-    if (summaryWrap) summaryWrap.innerHTML='';
-    return;
-  }
-  wrap.innerHTML = todayLogs.map(l=>{
-    const aic=l.aiLabel==='적절'?'var(--green)':l.aiLabel==='과함'?'var(--coral)':'var(--gold)';
-    return `<div class="log-item">
-      <div class="log-avatar" style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25)">${l.workouts[0]?.icon||'⚡'}</div>
-      <div class="log-info">
-        <div class="log-name">${l.workouts.map(w=>w.name).join(', ')}</div>
-        <div class="log-meta">${l.totalMins}분 · ${l.totalKcal}kcal · +${l.points}pt</div>
-      </div>
-      <div class="ai-chip" style="color:${aic};background:${aic}18;border:1px solid ${aic}33">AI: ${l.aiLabel||'-'}</div>
-      <button class="rm-btn" onclick="deleteLog(${l.id})" title="삭제">−</button>
-    </div>`;
-  }).join('');
-
-  // 오늘 전체 종합 한 줄 분석
-  if (summaryWrap) {
-    const totalMins = todayLogs.reduce((s,l)=>s+l.totalMins,0);
-    const totalKcal = todayLogs.reduce((s,l)=>s+l.totalKcal,0);
-    const overallLabel = (totalKcal>=1500||totalMins>=150)?'과함':(totalKcal<100||totalMins<20)?'부족':'적절';
-    const lc = overallLabel==='적절'?'var(--green)':overallLabel==='과함'?'var(--coral)':'var(--gold)';
-    const msg = overallLabel==='과함'
-      ? `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 운동량이 많아요. 휴식도 챙기세요!`
-      : overallLabel==='적절'
-      ? `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 적절한 하루였어요! 👍`
-      : `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 조금 부족해요. 조금만 더 움직여볼까요?`;
-    let html = `<div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:${lc}12;border:1px solid ${lc}33;font-size:12px;color:${lc};font-weight:600;">📋 오늘 종합: ${msg}</div>`;
-    if (totalKcal>=1500 || totalMins>=150) {
-      html += `<div style="margin-top:8px;padding:10px 14px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.4);font-size:12px;color:var(--coral);font-weight:700;">⚠️ 오늘 누적 운동량이 매우 높아요(${totalKcal}kcal, ${totalMins}분)! 무리하지 말고 충분히 쉬어주세요.</div>`;
+// 페이지가 켜질 때 기존에 저장된 키가 있다면 입력창에 미리 보여주기
+window.addEventListener('DOMContentLoaded', () => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+        document.getElementById('gemini-key-input').value = savedKey;
     }
-    summaryWrap.innerHTML = html;
-  }
-}
-
-function deleteLog(id) {
-  const idx = state.logs.findIndex(l=>l.id===id);
-  if (idx === -1) return;
-  const removed = state.logs[idx];
-  state.logs.splice(idx, 1);
-  state.points = Math.max(0, state.points - (removed.points||0));
-  updateStreak();
-  save();
-  updateKPIs();
-  renderRecentLogs();
-  showToast('🗑️ 기록을 삭제했어요');
-}
-
-// ── 캘린더
-let calYear, calMonth;
-function renderCalendar() {
-  const now=new Date();
-  if (!calYear) calYear=now.getFullYear();
-  if (calMonth===undefined) calMonth=now.getMonth();
-  document.getElementById('calMonthLabel').textContent=`${calYear}년 ${calMonth+1}월`;
-  const dowWrap=document.getElementById('calDows');
-  if (!dowWrap.children.length) ['월','화','수','목','금','토','일'].forEach(d=>{ dowWrap.innerHTML+=`<div class="cal-dow">${d}</div>`; });
-  const firstDay=new Date(calYear,calMonth,1), lastDay=new Date(calYear,calMonth+1,0);
-  const startDow=(firstDay.getDay()+6)%7, todayStr=now.toISOString().slice(0,10);
-  let html='';
-  for(let i=0;i<startDow;i++) html+='<div class="cal-day empty"></div>';
-  for(let d=1;d<=lastDay.getDate();d++) {
-    const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const hasLog=state.logs.some(l=>l.date===ds);
-    const isToday=ds===todayStr;
-    const dayLogs=state.logs.filter(l=>l.date===ds);
-    const kcal=dayLogs.reduce((s,l)=>s+l.totalKcal,0);
-    html+=`<div class="cal-day${hasLog?' worked':''}${isToday?' today':''}" onclick="openDayModal('${ds}')">
-      <span class="day-num">${d}</span>
-      ${hasLog?`<span style="font-size:8px;color:var(--cyan)">${kcal}kcal</span>`:''}
-      <span class="cal-dot"></span>
-    </div>`;
-  }
-  document.getElementById('calDays').innerHTML=html;
-  const ml=getMonthLogs();
-  document.getElementById('calStatSessions').textContent=ml.length;
-  document.getElementById('calStatMins').textContent=ml.reduce((s,l)=>s+l.totalMins,0);
-  document.getElementById('calStatStreak').textContent=state.streak;
-}
-function changeMonth(dir) {
-  calMonth+=dir;
-  if(calMonth<0){calMonth=11;calYear--;} if(calMonth>11){calMonth=0;calYear++;}
-  renderCalendar();
-}
-function openDayModal(ds) {
-  const logs=state.logs.filter(l=>l.date===ds);
-  document.getElementById('modalDate').textContent=ds;
-  if (!logs.length) {
-    document.getElementById('modalContent').innerHTML='<div style="color:var(--sub);font-size:13px">이 날은 운동 기록이 없어요</div>';
-  } else {
-    const totalMins=logs.reduce((s,l)=>s+l.totalMins,0);
-    const totalKcal=logs.reduce((s,l)=>s+l.totalKcal,0);
-    document.getElementById('modalContent').innerHTML=`
-      <div style="display:flex;gap:16px;margin-bottom:14px;">
-        <div style="text-align:center;flex:1;background:rgba(0,212,255,0.05);border-radius:8px;padding:10px;">
-          <div style="font-family:'Orbitron';font-size:18px;font-weight:700;color:var(--cyan)">${totalMins}</div>
-          <div style="font-size:11px;color:var(--sub)">분</div>
-        </div>
-        <div style="text-align:center;flex:1;background:rgba(255,107,107,0.05);border-radius:8px;padding:10px;">
-          <div style="font-family:'Orbitron';font-size:18px;font-weight:700;color:var(--coral)">${totalKcal}</div>
-          <div style="font-size:11px;color:var(--sub)">kcal</div>
-        </div>
-      </div>
-      ${logs.map(l=>`
-        <div style="margin-bottom:10px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:600;margin-bottom:4px">${l.workouts.map(w=>`${w.icon}${w.name} ${w.minutes}분`).join(', ')}</div>
-          <div style="font-size:11px;color:var(--sub);line-height:1.5">${l.aiText||'분석 없음'}</div>
-          <div style="font-size:11px;color:var(--gold);margin-top:6px;font-family:'JetBrains Mono'">+${l.points}pt</div>
-        </div>`).join('')}`;
-  }
-  document.getElementById('calModal').classList.add('open');
-  document.getElementById('modalOverlay').classList.add('open');
-}
-function closeModal() {
-  document.getElementById('calModal').classList.remove('open');
-  document.getElementById('modalOverlay').classList.remove('open');
-}
-
-// ── 오늘 목표
-function saveGoals() {
-  const m=parseInt(document.getElementById('goalMinInput').value)||30;
-  const k=parseInt(document.getElementById('goalKcalInput').value)||300;
-  const s=parseInt(document.getElementById('goalSessionInput').value)||1;
-  state.goals={mins:m,kcal:k,sessions:s};
-  save(); renderGoal(); showToast('목표가 저장됐어요! 🎯');
-}
-function renderGoal() {
-  const today=new Date().toISOString().slice(0,10);
-  document.getElementById('goal-today-date').textContent=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
-  document.getElementById('goalMinInput').value=state.goals.mins;
-  document.getElementById('goalKcalInput').value=state.goals.kcal;
-  document.getElementById('goalSessionInput').value=state.goals.sessions;
-  const todayLogs=state.logs.filter(l=>l.date===today);
-  const dMins=todayLogs.reduce((s,l)=>s+l.totalMins,0);
-  const dKcal=todayLogs.reduce((s,l)=>s+l.totalKcal,0);
-  const dSess=todayLogs.length;
-  const goals=[
-    {name:'운동 시간',current:dMins,target:state.goals.mins,unit:'분',color:'var(--cyan)'},
-    {name:'칼로리 소모',current:dKcal,target:state.goals.kcal,unit:'kcal',color:'var(--coral)'},
-    {name:'운동 횟수',current:dSess,target:state.goals.sessions,unit:'회',color:'var(--gold)'},
-  ];
-  document.getElementById('todayGoalWrap').innerHTML=goals.map(g=>{
-    const pct=Math.min(Math.round(g.current/g.target*100),100);
-    const done=g.current>=g.target;
-    return `<div class="goal-item">
-      <div class="goal-item-top">
-        <span class="goal-item-name">${g.name}</span>
-        <span class="goal-item-val">${g.current} / ${g.target}${g.unit}</span>
-      </div>
-      <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%;background:${g.color}"></div></div>
-      ${done?`<div class="goal-done">✅ 달성!</div>`:`<div style="font-size:11px;color:var(--sub);margin-top:4px">${pct}% 달성</div>`}
-    </div>`;
-  }).join('');
-  const tw=document.getElementById('todayLogs');
-  if (!todayLogs.length) { tw.innerHTML='<div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">오늘 운동 기록이 없어요</div>'; return; }
-  tw.innerHTML=todayLogs.map(l=>`
-    <div class="log-item">
-      <div class="log-avatar" style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2)">${l.workouts[0]?.icon||'⚡'}</div>
-      <div class="log-info">
-        <div class="log-name">${l.workouts.map(w=>w.name).join(', ')}</div>
-        <div class="log-meta">${l.totalMins}분 · ${l.totalKcal}kcal</div>
-      </div>
-    </div>`).join('');
-}
-
-// ── 통계
-function renderStats() {
-  const tc={};
-  state.logs.forEach(l=>l.workouts.forEach(w=>{tc[w.name]=(tc[w.name]||0)+1;}));
-  const sorted=Object.entries(tc).sort((a,b)=>b[1]-a[1]);
-  const max=sorted[0]?.[1]||1;
-  const colors=['var(--cyan)','var(--gold)','var(--coral)','var(--purple)'];
-  const wrap=document.getElementById('typeDistBars');
-  if (!sorted.length) { wrap.innerHTML='<div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">데이터 없음</div>'; }
-  else { wrap.innerHTML=sorted.slice(0,6).map(([t,c],i)=>`
-    <div class="stat-bar-row">
-      <span class="stat-bar-label">${t.slice(0,5)}</span>
-      <div class="stat-bar-bg"><div class="stat-bar-fill" style="width:${Math.round(c/max*90)}%;background:${colors[i%4]}">${c}회</div></div>
-      <span class="stat-bar-val">${c}</span>
-    </div>`).join(''); }
-  const ml=getMonthLogs();
-  const ms=ml.length, mm=ml.reduce((s,l)=>s+l.totalMins,0);
-  document.getElementById('goalProgress').innerHTML=`
-    <div class="prog-row">
-      <div class="prog-info"><span class="prog-name">이번달 운동 횟수</span><span class="prog-val">${ms}회</span></div>
-      <div class="prog-bg"><div class="prog-fill" style="width:${Math.min(ms/20*100,100)}%;background:var(--cyan)"></div></div>
-    </div>
-    <div class="prog-row">
-      <div class="prog-info"><span class="prog-name">이번달 운동 시간</span><span class="prog-val">${mm}분</span></div>
-      <div class="prog-bg"><div class="prog-fill" style="width:${Math.min(mm/600*100,100)}%;background:var(--gold)"></div></div>
-    </div>`;
-  const dc=[0,0,0,0,0,0,0];
-  state.logs.forEach(l=>{dc[(new Date(l.date).getDay()+6)%7]++;});
-  const md=Math.max(...dc,1);
-  document.getElementById('dowChart').innerHTML=dc.map(c=>`
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:80px;justify-content:flex-end">
-      <div style="font-size:10px;color:var(--cyan);font-family:'JetBrains Mono'">${c||''}</div>
-      <div style="width:100%;border-radius:4px 4px 0 0;height:${Math.round(c/md*60)+8}px;background:rgba(0,212,255,0.6)"></div>
-    </div>`).join('');
-  const aw=document.getElementById('allLogs');
-  if (!state.logs.length) { aw.innerHTML='<div style="font-size:13px;color:var(--sub);text-align:center;padding:20px">아직 기록이 없어요</div>'; return; }
-  aw.innerHTML=state.logs.map(l=>{
-    const aic=l.aiLabel==='적절'?'var(--green)':l.aiLabel==='과함'?'var(--coral)':'var(--gold)';
-    return `<div class="log-item">
-      <div class="log-avatar" style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2)">${l.workouts[0]?.icon||'⚡'}</div>
-      <div class="log-info">
-        <div class="log-name">${l.workouts.map(w=>w.name).join(', ')}</div>
-        <div class="log-meta">${l.totalMins}분 · ${l.totalKcal}kcal · ${l.date}</div>
-      </div>
-      <div class="ai-chip" style="color:${aic};background:${aic}18;border:1px solid ${aic}33">${l.aiLabel||'-'}</div>
-    </div>`;
-  }).join('');
-}
-
-// ── 마이페이지
-function renderMypage() {
-  document.getElementById('myPoints').textContent=state.points.toLocaleString();
-  document.getElementById('profileAvatar').textContent=state.equippedAvatar;
-  document.getElementById('equippedBadge').textContent=state.equippedBadge?`장착중: ${state.equippedBadge}`:'';
-  renderShop();
-  renderBadges();
-}
-
-function renderShop() {
-  const cats=['캐릭터','배경','뱃지'];
-  let html='';
-  cats.forEach(cat=>{
-    const items=SHOP_ITEMS.filter(i=>i.cat===cat);
-    html+=`<div class="shop-category">${cat}</div>`;
-    if (cat==='배경') {
-      const hasBg = !!state.equippedBg;
-      html+=`<div style="margin-bottom:10px;">
-        <button onclick="unequipBg()" style="background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--sub);border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;" ${hasBg?'':'disabled'}>
-          ↩️ 기본 배경으로 되돌리기 ${hasBg?'':'(이미 기본값)'}
-        </button>
-      </div>`;
-    }
-    html+='<div class="shop-grid">';
-    items.forEach(item=>{
-      const owned=state.ownedItems.includes(item.id);
-      const canBuy=item.free||state.points>=item.cost;
-      const isEquipped = (item.type==='bg' && state.equippedBg===item.color)
-        || (item.type==='avatar' && state.equippedAvatar===item.icon)
-        || (item.type==='badge' && state.equippedBadge===item.icon+' '+item.name);
-      html+=`<div class="shop-card ${owned?'owned':canBuy?'':'locked'}" ${isEquipped?'style="border-color:var(--cyan);box-shadow:0 0 16px rgba(0,212,255,0.25)"':''}>
-        <div class="shop-icon">${item.icon}</div>
-        <div class="shop-name">${item.name} ${isEquipped?'<span style="color:var(--cyan);font-size:11px;">(장착중)</span>':''}</div>
-        <div class="shop-desc">${item.desc}</div>
-        <div class="shop-cost ${item.free?'free':''}">${item.free?'무료':item.cost+'pt'}</div>
-        ${owned
-          ? `<button class="shop-btn owned-btn" onclick="equipItem('${item.id}')" ${isEquipped?'disabled':''}>${isEquipped?'✅ 장착중':'🔁 교체 장착'}</button>`
-          : `<button class="shop-btn" onclick="buyItem('${item.id}')" ${canBuy?'':'disabled'}>${canBuy?'구매':'포인트 부족'}</button>`
-        }
-      </div>`;
-    });
-    html+='</div>';
-  });
-  document.getElementById('shopContent').innerHTML=html;
-}
-
-
-function buyItem(id) {
-  const item=SHOP_ITEMS.find(i=>i.id===id);
-  if (!item) return;
-  if (!item.free && state.points<item.cost) return showToast('포인트가 부족해요!','warn');
-  if (!item.free) state.points-=item.cost;
-  state.ownedItems.push(item.id);
-  equipItem(id);
-  save(); renderMypage();
-  showToast(`🎉 "${item.name}" 구매 완료!`);
-}
-
-function equipItem(id) {
-  const item=SHOP_ITEMS.find(i=>i.id===id);
-  if (!item) return;
-  if (item.type==='avatar') {
-    state.equippedAvatar=item.icon;
-    document.getElementById('profileAvatar').textContent=item.icon;
-  } else if (item.type==='bg') {
-    // 이전에 장착했던 배경은 자동으로 해제되고 새 배경으로 교체됨
-    state.equippedBg=item.color;
-    state.equippedBgFloats=item.floats||[];
-    document.body.style.background=item.color;
-    document.documentElement.style.background=item.color;
-    renderBgFloaters(state.equippedBgFloats);
-  } else if (item.type==='badge') {
-    state.equippedBadge=item.icon+' '+item.name;
-    document.getElementById('equippedBadge').textContent=`장착중: ${state.equippedBadge}`;
-  }
-  save(); renderShop();
-  showToast(`✨ "${item.name}" 장착! (이전 아이템은 자동 해제됩니다)`);
-}
-
-// 배경을 기본값으로 되돌리기 (구매한 배경은 그대로 보유, 장착만 해제)
-function unequipBg() {
-  state.equippedBg = '';
-  state.equippedBgFloats = [];
-  document.body.style.background = 'var(--bg)';
-  document.documentElement.style.background = 'var(--bg)';
-  renderBgFloaters([]);
-  save(); renderShop();
-  showToast('🔄 기본 배경으로 되돌렸어요');
-}
-
-function renderBadges() {
-  const wrap=document.getElementById('badgeGrid');
-  if (!BADGES_DEF.filter(b=>state.ownedItems.includes(b.id)).length) {
-    wrap.innerHTML='<div style="font-size:13px;color:var(--sub)">운동을 기록해서 뱃지를 획득해보세요!</div>';
-    return;
-  }
-  wrap.innerHTML=BADGES_DEF.map(b=>`
-    <div class="badge-item ${state.ownedItems.includes(b.id)?'earned':''}">
-      <div class="badge-icon">${b.icon}</div>
-      <div class="badge-name">${b.name}</div>
-    </div>`).join('');
-}
-
-// ── 헬퍼
-function getMonthLogs() {
-  const now=new Date();
-  return state.logs.filter(l=>{const d=new Date(l.date);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});
-}
-function showToast(msg,type) {
-  const t=document.getElementById('toast');
-  t.textContent=msg;
-  t.style.borderColor=type==='warn'?'rgba(255,215,0,0.3)':'rgba(0,212,255,0.2)';
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),3000);
-}
-
-function resetAllData() {
-  if (!confirm('정말 모든 데이터를 초기화할까요?\n운동 기록, 포인트, 캐릭터, 뱃지가 모두 사라집니다.')) return;
-  localStorage.removeItem('fitai_v2');
-  location.reload();
-}
-
-// ── 초기화
-function init() {
-  load();
-  document.getElementById('today-date').textContent=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
-  renderWorkoutTypeGrid();
-  updateKPIs();
-  renderRecentLogs();
-}
-init();
+});
 </script>
-</body>
-</html>
