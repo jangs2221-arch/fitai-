@@ -542,6 +542,18 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
         </div>
       </div>
 
+      <!-- 상점 세계관 설명 -->
+      <div class="card" style="margin-bottom:16px;border-color:rgba(255,215,0,0.25);">
+        <div class="card-title" style="color:var(--gold)">💡 포인트와 상점은 어떻게 운영될까요?</div>
+        <div style="font-size:12px;color:var(--sub);line-height:1.7;">
+          FitAI의 포인트는 실제 화폐가 아니라, <strong style="color:var(--text)">앱 자체에서 발행하는 가상의 보상 토큰</strong>이에요.
+          운동을 기록할 때마다 FitAI 시스템이 직접 포인트를 지급하기 때문에, 외부에서 돈이 들어오지 않아도 운영될 수 있어요.<br><br>
+          상점의 캐릭터·배경·뱃지는 <strong style="color:var(--text)">FitAI가 자체적으로 만든 디지털 아이템</strong>으로, 실제 기업의 제품이 아니에요.
+          그래서 진짜 돈이 오가지 않고, 광고나 협찬 없이도 동기부여 시스템을 운영할 수 있는 구조예요.<br><br>
+          만약 나중에 실제 브랜드(예: 운동화 회사, 헬스장)와 제휴한다면, 그때는 광고비나 제휴 수수료로 운영 비용을 마련하는 방식이 될 수 있어요. 지금 버전은 학습/연습용 앱이라 그 단계는 가상으로 표현했어요.
+        </div>
+      </div>
+
       <!-- 상점 -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-title">포인트 상점</div>
@@ -1169,17 +1181,29 @@ function renderShop() {
   let html='';
   cats.forEach(cat=>{
     const items=SHOP_ITEMS.filter(i=>i.cat===cat);
-    html+=`<div class="shop-category">${cat}</div><div class="shop-grid">`;
+    html+=`<div class="shop-category">${cat}</div>`;
+    if (cat==='배경') {
+      const hasBg = !!state.equippedBg;
+      html+=`<div style="margin-bottom:10px;">
+        <button onclick="unequipBg()" style="background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--sub);border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600;" ${hasBg?'':'disabled'}>
+          ↩️ 기본 배경으로 되돌리기 ${hasBg?'':'(이미 기본값)'}
+        </button>
+      </div>`;
+    }
+    html+='<div class="shop-grid">';
     items.forEach(item=>{
       const owned=state.ownedItems.includes(item.id);
       const canBuy=item.free||state.points>=item.cost;
-      html+=`<div class="shop-card ${owned?'owned':canBuy?'':'locked'}">
+      const isEquipped = (item.type==='bg' && state.equippedBg===item.color)
+        || (item.type==='avatar' && state.equippedAvatar===item.icon)
+        || (item.type==='badge' && state.equippedBadge===item.icon+' '+item.name);
+      html+=`<div class="shop-card ${owned?'owned':canBuy?'':'locked'}" ${isEquipped?'style="border-color:var(--cyan);box-shadow:0 0 16px rgba(0,212,255,0.25)"':''}>
         <div class="shop-icon">${item.icon}</div>
-        <div class="shop-name">${item.name}</div>
+        <div class="shop-name">${item.name} ${isEquipped?'<span style="color:var(--cyan);font-size:11px;">(장착중)</span>':''}</div>
         <div class="shop-desc">${item.desc}</div>
         <div class="shop-cost ${item.free?'free':''}">${item.free?'무료':item.cost+'pt'}</div>
         ${owned
-          ? `<button class="shop-btn owned-btn" onclick="equipItem('${item.id}')">✅ 장착하기</button>`
+          ? `<button class="shop-btn owned-btn" onclick="equipItem('${item.id}')" ${isEquipped?'disabled':''}>${isEquipped?'✅ 장착중':'🔁 교체 장착'}</button>`
           : item.type==='api'
           ? `<button class="shop-btn" onclick="buyItem('${item.id}')">${state.apiKey?'✅ 연결됨 (다시 보기)':'🔗 API 키 발급받기'}</button>`
           : `<button class="shop-btn" onclick="buyItem('${item.id}')" ${canBuy?'':'disabled'}>${canBuy?'구매':'포인트 부족'}</button>`
@@ -1190,6 +1214,7 @@ function renderShop() {
   });
   document.getElementById('shopContent').innerHTML=html;
 }
+
 
 function buyItem(id) {
   const item=SHOP_ITEMS.find(i=>i.id===id);
@@ -1227,6 +1252,7 @@ function equipItem(id) {
     state.equippedAvatar=item.icon;
     document.getElementById('profileAvatar').textContent=item.icon;
   } else if (item.type==='bg') {
+    // 이전에 장착했던 배경은 자동으로 해제되고 새 배경으로 교체됨
     state.equippedBg=item.color;
     state.equippedBgFloats=item.floats||[];
     document.body.style.background=item.color;
@@ -1237,7 +1263,18 @@ function equipItem(id) {
     document.getElementById('equippedBadge').textContent=`장착중: ${state.equippedBadge}`;
   }
   save(); renderShop();
-  showToast(`✨ "${item.name}" 장착!`);
+  showToast(`✨ "${item.name}" 장착! (이전 아이템은 자동 해제됩니다)`);
+}
+
+// 배경을 기본값으로 되돌리기 (구매한 배경은 그대로 보유, 장착만 해제)
+function unequipBg() {
+  state.equippedBg = '';
+  state.equippedBgFloats = [];
+  document.body.style.background = 'var(--bg)';
+  document.documentElement.style.background = 'var(--bg)';
+  renderBgFloaters([]);
+  save(); renderShop();
+  showToast('🔄 기본 배경으로 되돌렸어요');
 }
 
 function renderBadges() {
