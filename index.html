@@ -772,17 +772,26 @@ async function analyzeWorkout() {
 
   const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
   const totalKcal = workouts.reduce((s,w)=>s+Math.round(w.kcalPerMin*w.minutes),0);
+  const avgIntensity = totalMins > 0 ? totalKcal/totalMins : 0; // kcal per minute (운동 강도)
   const summary = workouts.map(w=>`${w.icon}${w.name} ${w.minutes}분`).join(', ');
+
+  // 칼로리/시간/강도를 함께 고려한 판정 (시간만 보고 판단하지 않도록)
+  function judge(mins, kcal) {
+    if (kcal >= 1500 || mins >= 150) return '과함';
+    if (kcal < 100 || mins < 20) return '부족';
+    return '적절';
+  }
+  const overloadWarning = totalKcal >= 1500 || totalMins >= 150;
 
   let aiText = '', aiLabel = '적절';
 
   if (!state.apiKey) {
-    aiLabel = totalMins>=90?'과함':totalMins>=20?'적절':'부족';
+    aiLabel = judge(totalMins, totalKcal);
     const demoMsg = aiLabel==='과함'
-      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동 시간이 다소 많아요. 무리한 운동은 부상의 위험이 있으니 내일은 가볍게 스트레칭 위주로 쉬어가는 것을 추천해요 🙆`
+      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! (데모 모드) 칼로리 소모량과 운동 시간이 매우 높아요. 무리한 운동은 부상이나 탈진의 위험이 있으니 내일은 가볍게 스트레칭 위주로 충분히 쉬어가는 것을 추천해요 🙆`
       : aiLabel==='적절'
-      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동량이 적절해 보여요. 꾸준히 이 페이스를 유지해보세요 💪`
-      : `오늘 <strong>${summary}</strong> 총 ${totalMins}분 운동하셨네요! (데모 모드) 운동량이 조금 부족해 보여요. 시간을 조금 더 늘려보는 건 어떨까요? 🙂`;
+      ? `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! (데모 모드) 운동량이 적절해 보여요. 꾸준히 이 페이스를 유지해보세요 💪`
+      : `오늘 <strong>${summary}</strong> 총 ${totalMins}분, 약 ${totalKcal}kcal 소모하셨네요! (데모 모드) 운동량이 조금 부족해 보여요. 시간을 조금 더 늘려보는 건 어떨까요? 🙂`;
     aiText = demoMsg + ' API 키를 설정하면 맞춤 AI 분석을 받을 수 있어요!';
   } else {
     try {
@@ -791,7 +800,7 @@ async function analyzeWorkout() {
         headers:{'Content-Type':'application/json','x-api-key':state.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
         body:JSON.stringify({
           model:'claude-haiku-4-5-20251001', max_tokens:500,
-          messages:[{role:'user',content:`운동 전문가 AI로서 오늘 운동을 분석해주세요.\n오늘 운동: ${summary} (총 ${totalMins}분, 약 ${totalKcal}kcal)\n\n형식:\n1. 첫 줄: "적절", "부족", "과함" 중 하나\n2. 3-4문장 피드백\n3. 마지막 줄: "상체:XX% 하체:XX% 유산소:XX%"\n\n기준: 20분 미만=부족, 20-90분=적절, 90분 초과=과함`}]
+          messages:[{role:'user',content:`운동 전문가 AI로서 오늘 운동을 분석해주세요.\n오늘 운동: ${summary}\n총 운동 시간: ${totalMins}분\n총 소모 칼로리: 약 ${totalKcal}kcal\n평균 운동 강도: 분당 약 ${avgIntensity.toFixed(1)}kcal\n\n중요: 판정은 운동 시간만 보지 말고, 소모 칼로리와 운동 강도를 반드시 함께 고려하세요. 예를 들어 짧은 시간이라도 칼로리 소모가 매우 크면(고강도) '과함'으로 판단해야 하고, 긴 시간이라도 강도가 매우 낮은 가벼운 스트레칭이면 '부족'으로 판단할 수 있습니다.\n\n형식:\n1. 첫 줄: "적절", "부족", "과함" 중 하나\n2. 3-4문장 피드백 (소모 칼로리와 강도를 근거로 설명)\n3. 마지막 줄: "상체:XX% 하체:XX% 유산소:XX%"\n\n참고 기준: 총 칼로리 1500kcal 이상이거나 총 시간 150분 이상이면 과함, 총 칼로리 100kcal 미만이거나 총 시간 20분 미만이면 부족, 그 외에는 적절.`}]
         })
       });
       const data = await res.json();
@@ -805,6 +814,11 @@ async function analyzeWorkout() {
     } catch(e) {
       aiText = 'AI 분석 오류: '+e.message; aiLabel='오류';
     }
+  }
+
+  // 과도한 운동량 감지 시 별도 경고 문구 추가
+  if (overloadWarning) {
+    aiText += `<br><br><span style="color:var(--coral);font-weight:700;">⚠️ 경고: 오늘 소모 칼로리(${totalKcal}kcal) 또는 운동 시간(${totalMins}분)이 매우 높습니다. 과도한 운동은 부상, 탈진, 면역력 저하의 위험이 있어요. 충분한 휴식과 수분 섭취를 챙기고, 통증이 있다면 즉시 운동을 멈추세요.</span>`;
   }
 
   const lc = {적절:'label-good',부족:'label-warn',과함:'label-over',오류:'label-warn'}[aiLabel]||'label-warn';
@@ -847,7 +861,7 @@ function renderBalanceChips(balance) {
 // ── 포인트 계산
 function calcPoints(workouts) {
   const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
-  let pts = 35;
+  let pts = 75;
   if (totalMins>=30) pts+=8;
   if (totalMins>=60) pts+=8;
   pts += Math.min(state.streak,10)*3;
@@ -945,14 +959,18 @@ function renderRecentLogs() {
   if (summaryWrap) {
     const totalMins = todayLogs.reduce((s,l)=>s+l.totalMins,0);
     const totalKcal = todayLogs.reduce((s,l)=>s+l.totalKcal,0);
-    const overallLabel = totalMins>=90?'과함':totalMins>=20?'적절':'부족';
+    const overallLabel = (totalKcal>=1500||totalMins>=150)?'과함':(totalKcal<100||totalMins<20)?'부족':'적절';
     const lc = overallLabel==='적절'?'var(--green)':overallLabel==='과함'?'var(--coral)':'var(--gold)';
     const msg = overallLabel==='과함'
       ? `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 운동량이 많아요. 휴식도 챙기세요!`
       : overallLabel==='적절'
       ? `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 적절한 하루였어요! 👍`
       : `오늘 총 ${todayLogs.length}개 활동, ${totalMins}분(${totalKcal}kcal)으로 조금 부족해요. 조금만 더 움직여볼까요?`;
-    summaryWrap.innerHTML = `<div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:${lc}12;border:1px solid ${lc}33;font-size:12px;color:${lc};font-weight:600;">📋 오늘 종합: ${msg}</div>`;
+    let html = `<div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:${lc}12;border:1px solid ${lc}33;font-size:12px;color:${lc};font-weight:600;">📋 오늘 종합: ${msg}</div>`;
+    if (totalKcal>=1500 || totalMins>=150) {
+      html += `<div style="margin-top:8px;padding:10px 14px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.4);font-size:12px;color:var(--coral);font-weight:700;">⚠️ 오늘 누적 운동량이 매우 높아요(${totalKcal}kcal, ${totalMins}분)! 무리하지 말고 충분히 쉬어주세요.</div>`;
+    }
+    summaryWrap.innerHTML = html;
   }
 }
 
