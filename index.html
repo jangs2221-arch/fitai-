@@ -24,6 +24,13 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.25);border-radius:2px;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+#bgFloaters{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
+.float-icon{position:absolute;bottom:-15vh;opacity:0.16;filter:blur(0.3px);animation:floatUp linear infinite;will-change:transform;}
+@keyframes floatUp{
+  0%{transform:translateY(0) translateX(0) rotate(0deg);}
+  50%{transform:translateY(-55vh) translateX(30px) rotate(180deg);}
+  100%{transform:translateY(-115vh) translateX(-10px) rotate(360deg);}
+}
 @keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes barGrow{from{width:0;}to{}}
@@ -276,7 +283,8 @@ input,textarea{font-family:'Rajdhani',sans-serif;}
 </style>
 </head>
 <body>
-<div id="app">
+<div id="bgFloaters"></div>
+<div id="app" style="position:relative;z-index:1;">
   <nav id="sidebar">
     <div class="logo">
       <div class="logo-text">FIT<span>AI</span></div>
@@ -591,11 +599,11 @@ const SHOP_ITEMS = [
   {id:'char3', cat:'캐릭터', icon:'💪', name:'근육맨', desc:'근육이 붙기 시작한 캐릭터', cost:2500, type:'avatar'},
   {id:'char4', cat:'캐릭터', icon:'🏋️', name:'헬스 마니아', desc:'본격적으로 근육을 키우는 캐릭터', cost:4500, type:'avatar'},
   {id:'char5', cat:'캐릭터', icon:'🏆', name:'보디빌더 챔피언', desc:'최고의 근육질 챔피언 캐릭터', cost:8000, type:'avatar'},
-  // 배경 (헬창 컨셉)
-  {id:'bg1', cat:'배경', icon:'🥤', name:'프로틴 쉐이크', desc:'온통 프로틴 쉐이크 색으로 물든 배경', cost:1200, type:'bg', color:'linear-gradient(135deg,#1a1410,#2a1f15)'},
-  {id:'bg2', cat:'배경', icon:'🏋️', name:'헬스장 락커룸', desc:'철문과 락커가 떠오르는 차가운 배경', cost:2000, type:'bg', color:'linear-gradient(135deg,#0d1117,#1c2128)'},
-  {id:'bg3', cat:'배경', icon:'🍗', name:'닭가슴살 식단방', desc:'오늘도 닭가슴살... 담백한 베이지 배경', cost:1500, type:'bg', color:'linear-gradient(135deg,#1a1612,#2a2418)'},
-  {id:'bg4', cat:'배경', icon:'🔥', name:'가슴데이 파이어', desc:'가슴 운동 후 펌핑된 듯한 레드존 배경', cost:1800, type:'bg', color:'linear-gradient(135deg,#1a0a0a,#2a1010)'},
+  // 배경 (헬창 컨셉) - floats: 떠다니는 아이콘들
+  {id:'bg1', cat:'배경', icon:'🥤', name:'프로틴 쉐이크', desc:'프로틴 쉐이크와 아령이 떠다니는 배경', cost:1200, type:'bg', color:'linear-gradient(135deg,#1a1410,#2a1f15)', floats:['🥤','🥛','💪','🍌']},
+  {id:'bg2', cat:'배경', icon:'🏋️', name:'헬스장 락커룸', desc:'헬스 기구와 아령이 떠다니는 배경', cost:2000, type:'bg', color:'linear-gradient(135deg,#0d1117,#1c2128)', floats:['🏋️','🔒','🏋️‍♂️','⚙️']},
+  {id:'bg3', cat:'배경', icon:'🍗', name:'닭가슴살 식단방', desc:'닭가슴살과 식단 아이템이 떠다니는 배경', cost:1500, type:'bg', color:'linear-gradient(135deg,#1a1612,#2a2418)', floats:['🍗','🥚','🥦','🍚']},
+  {id:'bg4', cat:'배경', icon:'🔥', name:'가슴데이 파이어', desc:'불꽃과 근육이 떠다니는 배경', cost:1800, type:'bg', color:'linear-gradient(135deg,#1a0a0a,#2a1010)', floats:['🔥','💪','🏋️','💥']},
   // 뱃지 (헬창 컨셉)
   {id:'badge1', cat:'뱃지', icon:'🍗', name:'닭가슴살 마스터', desc:'오늘도 닭가슴살... 식단 관리의 증표', cost:600, type:'badge'},
   {id:'badge2', cat:'뱃지', icon:'🥤', name:'프로틴 쉐이커', desc:'어디서든 쉐이커를 흔드는 헬창의 증표', cost:1200, type:'badge'},
@@ -623,6 +631,7 @@ let state = {
   ownedItems: [],
   equippedAvatar: '🏃',
   equippedBg: '',
+  equippedBgFloats: [],
   equippedBadge: '',
   goals: {mins: 30, kcal: 300, sessions: 1},
 };
@@ -641,6 +650,25 @@ function load() {
     document.getElementById('apiSetup').classList.remove('show');
   }
   if (state.equippedBg) { document.body.style.background = state.equippedBg; document.documentElement.style.background = state.equippedBg; }
+  if (state.equippedBgFloats && state.equippedBgFloats.length) renderBgFloaters(state.equippedBgFloats);
+}
+
+// ── 떠다니는 배경 아이콘 렌더링
+function renderBgFloaters(icons) {
+  const wrap = document.getElementById('bgFloaters');
+  if (!wrap) return;
+  if (!icons || !icons.length) { wrap.innerHTML = ''; return; }
+  let html = '';
+  const COUNT = 18;
+  for (let i = 0; i < COUNT; i++) {
+    const icon = icons[i % icons.length];
+    const left = Math.round(Math.random()*96);
+    const size = 22 + Math.round(Math.random()*34); // 22~56px
+    const duration = 14 + Math.round(Math.random()*16); // 14~30s
+    const delay = -Math.round(Math.random()*30); // -0~30s (already in progress)
+    html += `<span class="float-icon" style="left:${left}%;font-size:${size}px;animation-duration:${duration}s;animation-delay:${delay}s;">${icon}</span>`;
+  }
+  wrap.innerHTML = html;
 }
 
 // ── 네비게이션
@@ -1180,8 +1208,10 @@ function equipItem(id) {
     document.getElementById('profileAvatar').textContent=item.icon;
   } else if (item.type==='bg') {
     state.equippedBg=item.color;
+    state.equippedBgFloats=item.floats||[];
     document.body.style.background=item.color;
     document.documentElement.style.background=item.color;
+    renderBgFloaters(state.equippedBgFloats);
   } else if (item.type==='badge') {
     state.equippedBadge=item.icon+' '+item.name;
     document.getElementById('equippedBadge').textContent=`장착중: ${state.equippedBadge}`;
