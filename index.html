@@ -861,10 +861,12 @@ function renderBalanceChips(balance) {
 // ── 포인트 계산
 function calcPoints(workouts) {
   const totalMins = workouts.reduce((s,w)=>s+w.minutes,0);
+  const totalKcal = workouts.reduce((s,w)=>s+Math.round(w.kcalPerMin*w.minutes),0);
   let pts = 100;
   if (totalMins>=30) pts+=8;
   if (totalMins>=60) pts+=8;
   pts += Math.min(state.streak,10)*3;
+  pts += Math.round(totalKcal/2); // 칼로리 2당 1포인트 추가
   return pts;
 }
 
